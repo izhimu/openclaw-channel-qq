@@ -1,176 +1,128 @@
-# OpenClaw Plugin - QQ NapCat
+# OpenClaw Channel Plugin - QQ (NapCat)
 
-A QQ channel plugin for [OpenClaw](https://github.com/openclaw) using the [NapCat](https://github.com/NapNeko/NapCatQQ) WebSocket API.
+A QQ channel plugin for [OpenClaw](https://docs.openclaw.ai/) using the [NapCat](https://github.com/NapNeko/NapCatQQ) WebSocket API (OneBot 11 standard).
 
 ## Features
 
 - **Multi-Account Support** - Connect and manage multiple QQ bot accounts simultaneously
 - **Chat Types** - Supports both direct (private) and group messages
-- **Message Types** - Text, @mentions, images, and message replies
+- **Message Types** - Text, @mentions, images, faces, and message replies
 - **Event Handling** - Message events, notice events (pokes), and meta events
-- **Status Reporting** - Real-time connection status monitoring
-- **WebSocket Communication** - Efficient real-time communication via NapCat WebSocket API
+- **Auto-Reconnect** - Automatic reconnection with exponential backoff
+- **Heartbeat** - Keep-alive ping/pong for connection health monitoring
+- **Interactive Setup** - CLI wizard for easy configuration
 
-## Installation
+## Prerequisites
 
-### Method 1: openclaw plugins install (Recommended)
+1. **OpenClaw** - Install [OpenClaw](https://docs.openclaw.ai/)
+2. **NapCat** - Install [NapCat](https://github.com/NapNeko/NapCatQQ) and enable WebSocket forward
 
-After publishing to npm, you can install directly:
+## Quick Start
 
-```bash
-openclaw plugins install qq-napcat
-```
-
-### Method 2: Local Development (For testing)
-
-1. Clone this repository:
+### 1. Install Plugin
 
 ```bash
-git clone https://github.com/izhimu/openclaw-plugin-napcat.git
-cd openclaw-plugin-napcat
+# Via OpenClaw CLI (recommended)
+openclaw plugins install openclaw-channel-qq
+
+# Or manually from local path
+openclaw plugins install /path/to/openclaw-channel-qq
 ```
 
-2. Install dependencies and build:
+### 2. Configure NapCat
+
+Enable WebSocket in NapCat's `config.yml`:
+
+```yaml
+ws:
+  servers:
+    - url: ws://0.0.0.0:3001
+      token: ""  # Set if access control is needed
+      enableHeart: true
+```
+
+### 3. Configure OpenClaw
+
+Edit your OpenClaw config file:
+
+```yaml
+channels:
+  openclaw-channel-qq:
+    accounts:
+      bot1:
+        wsUrl: ws://127.0.0.1:3001
+        accessToken: ""  # Optional
+        enabled: true
+```
+
+### 4. Restart Gateway
 
 ```bash
-npm install
-npm run build
-```
-
-3. Copy the plugin to OpenClaw's plugins directory:
-
-```bash
-# Assuming OpenClaw is installed at /path/to/openclaw
-cp -r dist /path/to/openclaw/plugins/qq-napcat
-cp openclaw.plugin.json /path/to/openclaw/plugins/qq-napcat/
-cp package.json /path/to/openclaw/plugins/qq-napcat/
-```
-
-### Method 2: npm Install (For production)
-
-1. Install the plugin:
-
-```bash
-cd /path/to/openclaw
-npm install openclaw-channel-qq
-```
-
-2. The plugin will be available in `node_modules/openclaw-channel-qq`
-
-### Register the Plugin in OpenClaw
-
-Add the plugin to OpenClaw's plugin configuration (usually in `config.json` or plugins section):
-
-```json
-{
-  "plugins": [
-    {
-      "id": "qq-napcat",
-      "path": "./plugins/qq-napcat"
-    }
-  ]
-}
-```
-
-Or if using npm install:
-
-```json
-{
-  "plugins": [
-    {
-      "id": "qq-napcat",
-      "module": "openclaw-channel-qq"
-    }
-  ]
-}
-```
-
-### Configure QQ Accounts
-
-Configure the plugin in your OpenClaw configuration file:
-
-```json
-{
-  "channels": {
-    "openclaw-channel-qq": {
-      "accounts": {
-        "bot1": {
-          "wsUrl": "ws://127.0.0.1:3001",
-          "accessToken": "optional-token",
-          "enabled": true
-        }
-      }
-    }
-  }
-}
+openclaw gateway restart
 ```
 
 ## Configuration
 
-### Account Configuration
+### Interactive Setup (Recommended)
 
-Each account requires the following properties:
+```bash
+openclaw onboard
+```
 
-| Property | Type | Required | Default | Description |
-|----------|------|----------|---------|-------------|
-| `wsUrl` | string | Yes | - | NapCat WebSocket URL (e.g., `ws://127.0.0.1:3001`) |
-| `accessToken` | string | No | - | Access token for authentication (if enabled) |
-| `enabled` | boolean | No | `true` | Enable or disable this account |
+Follow the prompts to configure your QQ bot account.
 
-### NapCat Setup
+### Manual Configuration
 
-Before using this plugin, you need to set up NapCat:
+Add to your OpenClaw config:
 
-1. Install [NapCat](https://github.com/NapNeko/NapCatQQ) following their documentation
-2. Configure the WebSocket forward in NapCat's `config.json`:
-   ```json
-   {
-     "ws": {
-       "servers": [
-         {
-           "url": "ws://0.0.0.0:3001",
-           "token": "",
-           "enableHeart": true
-         }
-       ]
-     }
-   }
-   ```
+```yaml
+channels:
+  openclaw-channel-qq:
+    # Single account (default)
+    wsUrl: ws://127.0.0.1:3001
+    accessToken: ""  # Optional
+    enabled: true
+
+    # Or multiple accounts
+    accounts:
+      bot1:
+        wsUrl: ws://127.0.0.1:3001
+        accessToken: ""
+        enabled: true
+      bot2:
+        wsUrl: ws://127.0.0.1:3002
+        accessToken: "your-token"
+        enabled: true
+```
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `wsUrl` | string | Yes | NapCat WebSocket URL |
+| `accessToken` | string | No | Access token for authentication |
+| `enabled` | boolean | No | Enable/disable account (default: true) |
+| `name` | string | No | Display name for the account |
 
 ## Usage
 
 ### Sending Messages
 
-```typescript
-// Send to a group
-await api.channels.sendText('bot1', '123456789', 'group', [
-  { type: 'text', text: 'Hello, group!' }
-]);
-
-// Send to a private chat
-await api.channels.sendText('bot1', '987654321', 'direct', [
-  { type: 'text', text: 'Hello there!' }
-]);
+```bash
+# Via CLI
+openclaw message send "Hello from OpenClaw!" --to openclaw-channel-qq:private:123456789
 ```
 
 ### Receiving Messages
 
-The plugin automatically forwards incoming messages to OpenClaw's message handler. Messages include:
+The plugin automatically forwards incoming messages to OpenClaw's message handler.
 
-- Group messages (`message_sent_type`)
-- Private messages (`message_private_sent_type`)
-- Notice events (e.g., pokes)
+**Supported Events:**
+- `post_type: message` - Group and private messages
+- `post_type: notice` - Notice events (pokes, etc.)
 
-### Connection Status
+### Check Status
 
-Monitor connection status for each account:
-
-```typescript
-import { getStatus } from 'qq-napcat';
-
-const statuses = await getStatus();
-console.log(statuses);
-// { "bot1": { state: "connected", ... } }
+```bash
+openclaw channels
 ```
 
 ## Message Format
@@ -178,12 +130,12 @@ console.log(statuses);
 ### Inbound Message
 
 ```typescript
-interface OpenClawMessage {
-  id: string;              // Unique message ID
-  channelId: 'qq';         // Channel identifier
-  accountId: string;       // Account identifier (e.g., "bot1")
+interface Message {
+  id: string;
+  channel: "openclaw-channel-qq";
+  accountId: string;
   chatId: string;          // Group ID or user ID
-  chatType: 'direct' | 'group';
+  chatType: "direct" | "group";
   content: MessageSegment[];
   senderId: string;
   senderName?: string;
@@ -192,14 +144,14 @@ interface OpenClawMessage {
 }
 ```
 
-### Message Segment
+### Message Segments
 
 ```typescript
 type MessageSegment =
-  | { type: 'text'; text: string }
-  | { type: 'at'; qq: number }
-  | { type: 'image'; file: string }
-  | { type: 'reply'; id: number };
+  | { type: "text"; text: string }
+  | { type: "at"; userId: string; isAll?: boolean }
+  | { type: "image"; url: string }
+  | { type: "reply"; messageId: string };
 ```
 
 ## Development
@@ -208,29 +160,50 @@ type MessageSegment =
 # Install dependencies
 npm install
 
-# Build the project
+# Build
 npm run build
 
-# Watch mode for development
+# Watch mode
 npm run dev
 ```
 
 ## Project Structure
 
 ```
-openclaw-plugin-napcat/
+openclaw-channel-qq/
 ├── src/
-│   ├── index.ts          # Main plugin entry point
-│   ├── connection.ts     # WebSocket connection management
-│   ├── adapters.ts       # Message format adapters
-│   ├── types.ts          # TypeScript type definitions
-│   ├── utils.ts          # Utility functions
-│   └── openclaw.d.ts     # OpenClaw API type declarations
-├── index.ts              # Plugin exports
-├── openclaw.plugin.json  # Plugin manifest
-├── package.json
-└── tsconfig.json
+│   ├── index.ts         # Main plugin definition
+│   ├── connection.ts    # WebSocket connection manager
+│   ├── adapters.ts      # NapCat ↔ OpenClaw message conversion
+│   ├── config.ts        # Configuration resolution
+│   ├── onboarding.ts    # Interactive setup wizard
+│   ├── types.ts         # TypeScript definitions
+│   └── utils.ts         # Utility functions
+├── index.ts             # Plugin entry point
+├── openclaw.plugin.json # Plugin manifest
+└── package.json
 ```
+
+## Troubleshooting
+
+### Connection Issues
+
+1. **Check NapCat is running** and WebSocket is enabled
+2. **Verify the wsUrl** matches NapCat's configuration
+3. **Check firewall** settings for the WebSocket port
+
+### Messages Not Received
+
+1. Ensure the account is `enabled: true`
+2. Check OpenClaw logs: `openclaw logs`
+3. Verify NapCat is sending events (check NapCat logs)
+
+## Links
+
+- [OpenClaw Documentation](https://docs.openclaw.ai/)
+- [OpenClaw Plugins](https://docs.openclaw.ai/plugin)
+- [NapCat GitHub](https://github.com/NapNeko/NapCatQQ)
+- [OneBot 11 Standard](https://github.com/botuniverse/onebot-11)
 
 ## License
 
@@ -239,8 +212,3 @@ MIT
 ## Author
 
 izhimu
-
-## Links
-
-- [OpenClaw](https://github.com/openclaw)
-- [NapCat](https://github.com/NapNeko/NapCatQQ)
