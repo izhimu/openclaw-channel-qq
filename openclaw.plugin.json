@@ -19,7 +19,6 @@
       },
       "wsUrl": {
         "type": "string",
-        "format": "uri",
         "description": "NapCat WebSocket URL (e.g., ws://localhost:3001)"
       },
       "accessToken": {
@@ -41,8 +40,7 @@
               "type": "string"
             },
             "wsUrl": {
-              "type": "string",
-              "format": "uri"
+              "type": "string"
             },
             "accessToken": {
               "type": "string"
