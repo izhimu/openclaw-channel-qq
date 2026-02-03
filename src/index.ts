@@ -482,25 +482,42 @@ async function dispatchMessage(params: {
     }
   };
 
+  // Get messages config for response prefix
+  const messagesConfig = pluginRuntime.channel.reply.resolveEffectiveMessagesConfig(cfg, route.agentId);
+  log?.info(`[openclaw-channel-qq:${accountId}] Messages config: ${JSON.stringify(messagesConfig)}`);
+
+  // Track if we got any response
+  let hasResponse = false;
+
   // Dispatch the message for AI processing
   try {
-    await pluginRuntime.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
+    log?.info(`[openclaw-channel-qq:${accountId}] Calling dispatchReplyWithBufferedBlockDispatcher...`);
+
+    const dispatchPromise = pluginRuntime.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
       ctx: ctxPayload,
       cfg,
       dispatcherOptions: {
+        responsePrefix: messagesConfig.responsePrefix,
         deliver: async (payload: { text?: string }, info: { kind: string }) => {
-          log?.info(`[openclaw-channel-qq:${accountId}] Response (${info.kind}): ${payload.text?.slice(0, 100) || "(empty)"}`);
+          hasResponse = true;
+          log?.info(`[openclaw-channel-qq:${accountId}] deliver(${info.kind}): ${payload.text?.slice(0, 100) || "(empty)"}`);
           if (payload.text) {
             await sendReply(payload.text);
           }
         },
         onError: async (err: unknown) => {
+          hasResponse = true;
           log?.error(`[openclaw-channel-qq:${accountId}] Dispatch error: ${err}`);
           await sendReply(`[错误] ${String(err).slice(0, 200)}`);
         },
       },
       replyOptions: {},
     });
+
+    // Wait for dispatch to complete
+    await dispatchPromise;
+
+    log?.info(`[openclaw-channel-qq:${accountId}] Dispatch completed, hasResponse: ${hasResponse}`);
   } catch (error) {
     log?.error(`[openclaw-channel-qq:${accountId}] Message processing failed: ${error}`);
   }
