@@ -1,0 +1,28 @@
+{
+  "name": "openclaw-channel-qq",
+  "version": "1.0.0",
+  "description": "A QQ channel plugin for OpenClaw using NapCat WebSocket",
+  "main": "index.ts",
+  "type": "module",
+  "scripts": {
+    "dev": "tsc --watch",
+    "build": "tsc",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "openclaw",
+    "plugin",
+    "qq"
+  ],
+  "author": "izhimu",
+  "license": "MIT",
+  "dependencies": {
+    "ws": "^8.19.0"
+  },
+  "devDependencies": {
+    "openclaw": "^2026.2.1",
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.18.0",
+    "typescript": "^5.0.0"
+  }
+}
