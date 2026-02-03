@@ -16,6 +16,9 @@
   ],
   "author": "izhimu",
   "license": "MIT",
+  "openclaw": {
+    "extensions": "./index.ts"
+  },
   "dependencies": {
     "ws": "^8.19.0"
   },
