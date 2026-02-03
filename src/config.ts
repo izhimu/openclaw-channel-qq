@@ -8,7 +8,7 @@ const DEFAULT_ACCOUNT_ID = "default";
 
 interface MoltbotConfig {
   channels?: {
-    "qq-napcat"?: QQNapCatChannelConfig;
+    "openclaw-channel-qq"?: QQNapCatChannelConfig;
     qq?: QQNapCatChannelConfig;
     [key: string]: unknown;
   };
@@ -30,8 +30,8 @@ interface QQNapCatChannelConfig {
 export function listQQNapCatAccountIds(cfg: MoltbotConfig): string[] {
   const ids = new Set<string>();
 
-  // Check qq-napcat config first
-  let napcat = cfg.channels?.["qq-napcat"];
+  // Check openclaw-channel-qq config first
+  let napcat = cfg.channels?.["openclaw-channel-qq"];
   // Fallback to legacy 'qq' key
   if (!napcat) {
     napcat = cfg.channels?.qq;
@@ -61,8 +61,8 @@ export function resolveQQNapCatAccount(
 ): AccountConfig {
   const resolvedAccountId = accountId ?? DEFAULT_ACCOUNT_ID;
 
-  // Check qq-napcat config first
-  let napcat = cfg.channels?.["qq-napcat"];
+  // Check openclaw-channel-qq config first
+  let napcat = cfg.channels?.["openclaw-channel-qq"];
   // Fallback to legacy 'qq' key
   if (!napcat) {
     napcat = cfg.channels?.qq;
@@ -106,8 +106,8 @@ export function applyQQNapCatAccountConfig(
   if (accountId === DEFAULT_ACCOUNT_ID) {
     next.channels = {
       ...next.channels,
-      "qq-napcat": {
-        ...next.channels?.["qq-napcat"],
+      "openclaw-channel-qq": {
+        ...next.channels?.["openclaw-channel-qq"],
         enabled: true,
         ...(input.wsUrl ? { wsUrl: input.wsUrl } : {}),
         ...(input.accessToken ? { accessToken: input.accessToken } : {}),
@@ -117,13 +117,13 @@ export function applyQQNapCatAccountConfig(
   } else {
     next.channels = {
       ...next.channels,
-      "qq-napcat": {
-        ...next.channels?.["qq-napcat"],
+      "openclaw-channel-qq": {
+        ...next.channels?.["openclaw-channel-qq"],
         enabled: true,
         accounts: {
-          ...(next.channels?.["qq-napcat"] as QQNapCatChannelConfig)?.accounts,
+          ...(next.channels?.["openclaw-channel-qq"] as QQNapCatChannelConfig)?.accounts,
           [accountId]: {
-            ...(next.channels?.["qq-napcat"] as QQNapCatChannelConfig)?.accounts?.[accountId],
+            ...(next.channels?.["openclaw-channel-qq"] as QQNapCatChannelConfig)?.accounts?.[accountId],
             enabled: true,
             ...(input.wsUrl ? { wsUrl: input.wsUrl } : {}),
             ...(input.accessToken ? { accessToken: input.accessToken } : {}),

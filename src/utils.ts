@@ -72,25 +72,25 @@ export function setLogLevel(level: LogLevel): void {
 
 export function logDebug(category: string, message: string, ...args: unknown[]): void {
   if (currentLogLevel <= LogLevel.DEBUG) {
-    console.debug(`[qq-napcat:${category}] ${message}`, ...args);
+    console.debug(`[openclaw-channel-qq:${category}] ${message}`, ...args);
   }
 }
 
 export function logInfo(category: string, message: string, ...args: unknown[]): void {
   if (currentLogLevel <= LogLevel.INFO) {
-    console.info(`[qq-napcat:${category}] ${message}`, ...args);
+    console.info(`[openclaw-channel-qq:${category}] ${message}`, ...args);
   }
 }
 
 export function logWarn(category: string, message: string, ...args: unknown[]): void {
   if (currentLogLevel <= LogLevel.WARN) {
-    console.warn(`[qq-napcat:${category}] ${message}`, ...args);
+    console.warn(`[openclaw-channel-qq:${category}] ${message}`, ...args);
   }
 }
 
 export function logError(category: string, message: string, ...args: unknown[]): void {
   if (currentLogLevel <= LogLevel.ERROR) {
-    console.error(`[qq-napcat:${category}] ${message}`, ...args);
+    console.error(`[openclaw-channel-qq:${category}] ${message}`, ...args);
   }
 }
 

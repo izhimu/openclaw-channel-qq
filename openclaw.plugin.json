@@ -1,6 +1,6 @@
 {
-  "id": "qq-napcat",
-  "channels": ["qq-napcat"],
+  "id": "openclaw-channel-qq",
+  "channels": ["openclaw-channel-qq"],
   "configSchema": {
     "type": "object",
     "additionalProperties": false,

@@ -42,12 +42,12 @@ const DEFAULT_ACCOUNT_ID = "default";
 // =============================================================================
 
 export const qqNapCatPlugin: ChannelPlugin<AccountConfig> = {
-  id: "qq-napcat",
+  id: "openclaw-channel-qq",
   meta: {
-    id: "qq-napcat",
+    id: "openclaw-channel-qq",
     label: "QQ (NapCat)",
     selectionLabel: "QQ NapCat",
-    docsPath: "/docs/channels/qq-napcat",
+    docsPath: "/docs/channels/openclaw-channel-qq",
     blurb: "通过 NapCat WebSocket 连接 QQ 机器人",
     order: 50,
   },
@@ -57,17 +57,17 @@ export const qqNapCatPlugin: ChannelPlugin<AccountConfig> = {
     reactions: false,
     threads: false,
   },
-  reload: { configPrefixes: ["channels.qq-napcat", "channels.qq"] },
+  reload: { configPrefixes: ["channels.openclaw-channel-qq", "channels.qq"] },
 
   // 消息目标解析
   messaging: {
     normalizeTarget: (target: string) => {
-      // 支持格式: qq-napcat:private:xxx, qq-napcat:group:xxx
-      return target.replace(/^qq(-napcat)?:/i, "");
+      // 支持格式: openclaw-channel-qq:private:xxx, openclaw-channel-qq:group:xxx
+      return target.replace(/^openclaw-channel-qq:/i, "");
     },
     targetResolver: {
       looksLikeId: (id: string) => {
-        const normalized = id.replace(/^qq(-napcat)?:/i, "");
+        const normalized = id.replace(/^openclaw-channel-qq:/i, "");
         // 支持 private:xxx, group:xxx 格式
         if (normalized.startsWith("private:") || normalized.startsWith("group:")) return true;
         // 支持纯数字QQ号或群号
@@ -114,7 +114,7 @@ export const qqNapCatPlugin: ChannelPlugin<AccountConfig> = {
       const account = resolveQQNapCatAccount(cfg, accountId);
       if (!account) {
         return {
-          channel: "qq-napcat",
+          channel: "openclaw-channel-qq",
           messageId: "",
           error: new Error(`Account not found: ${accountId}`),
         };
@@ -123,7 +123,7 @@ export const qqNapCatPlugin: ChannelPlugin<AccountConfig> = {
       const conn = connectionManager?.getConnection(accountId);
       if (!conn || !conn.isConnected()) {
         return {
-          channel: "qq-napcat",
+          channel: "openclaw-channel-qq",
           messageId: "",
           error: new Error(`Not connected for account: ${accountId}`),
         };
@@ -155,12 +155,12 @@ export const qqNapCatPlugin: ChannelPlugin<AccountConfig> = {
         if (response.status === "ok" && response.data) {
           const data = response.data as { message_id: number };
           return {
-            channel: "qq-napcat",
+            channel: "openclaw-channel-qq",
             messageId: messageIdToString(data.message_id),
           };
         } else {
           return {
-            channel: "qq-napcat",
+            channel: "openclaw-channel-qq",
             messageId: "",
             error: new Error(response.msg || "Send failed"),
           };
@@ -168,7 +168,7 @@ export const qqNapCatPlugin: ChannelPlugin<AccountConfig> = {
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         return {
-          channel: "qq-napcat",
+          channel: "openclaw-channel-qq",
           messageId: "",
           error: new Error(errorMessage),
         };
@@ -180,7 +180,7 @@ export const qqNapCatPlugin: ChannelPlugin<AccountConfig> = {
     startAccount: async (ctx: any) => {
       const { account, log } = ctx;
 
-      log?.info(`[qq-napcat:${account.accountId}] Starting gateway`);
+      log?.info(`[openclaw-channel-qq:${account.accountId}] Starting gateway`);
 
       // Store runtime context
       channelRuntimes.set(account.accountId, ctx);
@@ -190,7 +190,7 @@ export const qqNapCatPlugin: ChannelPlugin<AccountConfig> = {
 
       conn.on("event", handleNapCatEvent);
       conn.on("state-changed", (status: ConnectionStatus) => {
-        log?.info(`[qq-napcat:${account.accountId}] State: ${status.state}`);
+        log?.info(`[openclaw-channel-qq:${account.accountId}] State: ${status.state}`);
         if (status.state === "connected") {
           ctx.setStatus({
             ...ctx.getStatus(),
@@ -201,10 +201,10 @@ export const qqNapCatPlugin: ChannelPlugin<AccountConfig> = {
         }
       });
       conn.on("account-connected", () => {
-        log?.info(`[qq-napcat:${account.accountId}] Gateway ready`);
+        log?.info(`[openclaw-channel-qq:${account.accountId}] Gateway ready`);
       });
       conn.on("account-failed", (error: string) => {
-        log?.warn(`[qq-napcat:${account.accountId}] Gateway failed: ${error}`);
+        log?.warn(`[openclaw-channel-qq:${account.accountId}] Gateway failed: ${error}`);
         ctx.setStatus({
           ...ctx.getStatus(),
           lastError: error,
@@ -290,7 +290,7 @@ async function handleGroupMessage(accountId: string, event: any, ctx: any): Prom
 
   const message = {
     id: messageIdToString(event.message_id),
-    channel: "qq-napcat",
+    channel: "openclaw-channel-qq",
     accountId,
     chatId: String(event.group_id),
     chatType: "group" as const,
@@ -319,7 +319,7 @@ async function handlePrivateMessage(accountId: string, event: any, ctx: any): Pr
 
   const message = {
     id: messageIdToString(event.message_id),
-    channel: "qq-napcat",
+    channel: "openclaw-channel-qq",
     accountId,
     chatId: String(event.user_id),
     chatType: "direct" as const,
@@ -343,7 +343,7 @@ async function handleNoticeEvent(accountId: string, event: any, ctx: any): Promi
 
     const message = {
       id: generateMessageId(),
-      channel: "qq-napcat",
+      channel: "openclaw-channel-qq",
       accountId,
       chatId: event.group_id ? String(event.group_id) : String(event.user_id),
       chatType: event.group_id ? ("group" as const) : ("direct" as const),
