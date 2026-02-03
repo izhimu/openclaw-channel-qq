@@ -19,6 +19,11 @@
   "openclaw": {
     "extensions": ["./index.ts"]
   },
+  "peerDependencies": {
+    "clawdbot": "*",
+    "moltbot": "*",
+    "openclaw": "*"
+  },
   "dependencies": {
     "ws": "^8.19.0"
   },

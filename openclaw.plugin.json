@@ -1,88 +1,9 @@
 {
   "id": "qq-napcat",
-  "name": "qq-napcat",
-  "version": "1.0.0",
-  "description": "QQ channel plugin for OpenClaw using NapCat WebSocket API",
-  "author": "izhimu",
-  "license": "MIT",
-  "homepage": "https://github.com/izhimu/openclaw-plugin-napcat",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/izhimu/openclaw-plugin-napcat.git"
-  },
-  "keywords": [
-    "openclaw",
-    "plugin",
-    "qq",
-    "napcat",
-    "channel"
-  ],
-  "openclaw": {
-    "extensions": ["./dist/index.js"],
-    "channel": {
-      "id": "qq",
-      "label": "QQ (NapCat)",
-      "blurb": "通过 NapCat 连接 QQ 机器人",
-      "icon": "qq",
-      "capabilities": {
-        "chatTypes": ["direct", "group"],
-        "messageTypes": ["text", "at", "image", "reply"],
-        "features": ["multiAccount", "statusReporting"]
-      }
-    }
-  },
+  "channels": ["qq-napcat"],
   "configSchema": {
     "type": "object",
-    "properties": {
-      "accounts": {
-        "type": "object",
-        "description": "NapCat account configurations",
-        "additionalProperties": {
-          "type": "object",
-          "properties": {
-            "wsUrl": {
-              "type": "string",
-              "default": "ws://127.0.0.1:3001",
-              "description": "NapCat WebSocket URL"
-            },
-            "accessToken": {
-              "type": "string",
-              "description": "Access token for authentication (optional)"
-            },
-            "enabled": {
-              "type": "boolean",
-              "default": true,
-              "description": "Enable this account"
-            }
-          },
-          "required": ["wsUrl"]
-        }
-      }
-    }
-  },
-  "uiHints": {
-    "accounts": {
-      "label": "QQ Accounts",
-      "description": "Configure your NapCat instances",
-      "itemLabel": "Account",
-      "addButtonLabel": "Add Account",
-      "fields": {
-        "wsUrl": {
-          "label": "WebSocket URL",
-          "placeholder": "ws://127.0.0.1:3001",
-          "helpText": "The WebSocket URL of your NapCat instance"
-        },
-        "accessToken": {
-          "label": "Access Token",
-          "placeholder": "Optional authentication token",
-          "helpText": "Leave empty if authentication is not enabled",
-          "secret": true
-        },
-        "enabled": {
-          "label": "Enabled",
-          "helpText": "Enable or disable this account"
-        }
-      }
-    }
+    "additionalProperties": false,
+    "properties": {}
   }
 }

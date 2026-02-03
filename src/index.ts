@@ -3,521 +3,366 @@
  * Main plugin entry point
  */
 
-// Type declarations for OpenClaw plugin API
-import type {
-  PluginAPI,
-  ChannelDefinition,
-  ServiceLifecycle,
-  ChannelConfig,
-} from './openclaw.js';
-
-import {
-  MultiConnectionManager,
-  ConnectionManager,
-} from './connection.js';
-import {
-  napCatToOpenClawMessage,
-  openClawToNapCatMessage,
-  getMessageSummary,
-} from './adapters.js';
+import type { ChannelPlugin } from "openclaw/plugin-sdk";
+import type { AccountConfig, ConnectionStatus } from "./types.js";
 import {
   generateMessageId,
   messageIdToString,
   logDebug,
-  logInfo,
   logWarn,
-  logError,
-  setLogLevel,
-} from './utils.js';
-import type {
-  PluginConfig,
-  AccountConfig,
-  OpenClawMessage,
-  NapCatEvent,
-  NapCatMessageSentEvent,
-  NapCatPrivateMessageSentEvent,
-  NapCatPokeEvent,
-  NapCatNoticeEvent,
-  NapCatMetaEvent,
-  ConnectionStatus,
-} from './types.js';
+} from "./utils.js";
+import { MultiConnectionManager } from "./connection.js";
+import {
+  napCatToOpenClawMessage,
+  openClawToNapCatMessage,
+  getMessageSummary,
+} from "./adapters.js";
+import {
+  listQQNapCatAccountIds,
+  resolveQQNapCatAccount,
+  applyQQNapCatAccountConfig,
+} from "./config.js";
 
 // =============================================================================
 // Plugin State
 // =============================================================================
 
-let api: PluginAPI;
 let connectionManager: MultiConnectionManager;
-let pluginConfig: PluginConfig | null = null;
-let serviceLifecycle: ServiceLifecycle | null = null;
-let channelHandler: ((message: OpenClawMessage) => void) | null = null;
 
 // Bot user ID cache for routing
 const botUserIds = new Map<string, number>();
 
-// =============================================================================
-// Plugin Initialization
-// =============================================================================
+// Channel runtime per account
+const channelRuntimes = new Map<string, any>();
 
-export async function load(pluginApi: PluginAPI): Promise<void> {
-  api = pluginApi;
-  connectionManager = new MultiConnectionManager();
-
-  // Set log level from debug mode
-  if (api.config.debug) {
-    setLogLevel(0); // DEBUG
-  }
-
-  logInfo('plugin', 'Loading QQ NapCat plugin...');
-
-  // Register the channel
-  await registerChannel();
-
-  logInfo('plugin', 'QQ NapCat plugin loaded successfully');
-}
-
-export async function unload(): Promise<void> {
-  logInfo('plugin', 'Unloading QQ NapCat plugin...');
-
-  // Stop all connections
-  if (connectionManager) {
-    await connectionManager.stopAll();
-  }
-
-  // Stop the service
-  if (serviceLifecycle) {
-    await serviceLifecycle.stop();
-    serviceLifecycle = null;
-  }
-
-  logInfo('plugin', 'QQ NapCat plugin unloaded');
-}
+const DEFAULT_ACCOUNT_ID = "default";
 
 // =============================================================================
-// Channel Registration
+// Plugin Definition
 // =============================================================================
 
-async function registerChannel(): Promise<void> {
-  const channelDefinition: ChannelDefinition = {
-    id: 'qq',
-    label: 'QQ (NapCat)',
-    blurb: '通过 NapCat 连接 QQ 机器人',
+export const qqNapCatPlugin: ChannelPlugin<AccountConfig> = {
+  id: "qq-napcat",
+  meta: {
+    id: "qq-napcat",
+    label: "QQ (NapCat)",
+    selectionLabel: "QQ NapCat",
+    docsPath: "/docs/channels/qq-napcat",
+    blurb: "通过 NapCat WebSocket 连接 QQ 机器人",
+    order: 50,
+  },
+  capabilities: {
+    chatTypes: ["direct", "group"],
+    media: false,
+    reactions: false,
+    threads: false,
+  },
+  reload: { configPrefixes: ["channels.qq-napcat", "channels.qq"] },
 
-    capabilities: {
-      chatTypes: ['direct', 'group'],
+  // 消息目标解析
+  messaging: {
+    normalizeTarget: (target: string) => {
+      // 支持格式: qq-napcat:private:xxx, qq-napcat:group:xxx
+      return target.replace(/^qq(-napcat)?:/i, "");
     },
-
-    config: {
-      listAccountIds,
-      resolveAccount,
+    targetResolver: {
+      looksLikeId: (id: string) => {
+        const normalized = id.replace(/^qq(-napcat)?:/i, "");
+        // 支持 private:xxx, group:xxx 格式
+        if (normalized.startsWith("private:") || normalized.startsWith("group:")) return true;
+        // 支持纯数字QQ号或群号
+        if (/^\d+$/.test(normalized)) return true;
+        return false;
+      },
+      hint: "private:<qqId> or group:<groupId>",
     },
+  },
 
-    outbound: {
-      sendText,
-    },
-  };
+  config: {
+    listAccountIds: (cfg) => listQQNapCatAccountIds(cfg),
+    resolveAccount: (cfg, accountId) => resolveQQNapCatAccount(cfg, accountId),
+    defaultAccountId: () => DEFAULT_ACCOUNT_ID,
+    isConfigured: (account) => Boolean(account?.wsUrl),
+    describeAccount: (account) => ({
+      accountId: account?.accountId ?? DEFAULT_ACCOUNT_ID,
+      name: account?.name ?? account?.wsUrl,
+      enabled: account?.enabled ?? false,
+      configured: Boolean(account?.wsUrl),
+    }),
+  },
 
-  await api.channels.register(channelDefinition);
-
-  logInfo('plugin', 'Channel registered: qq');
-}
-
-// =============================================================================
-// Configuration
-// =============================================================================
-
-async function listAccountIds(): Promise<string[]> {
-  const config = await loadConfig();
-  if (!config) {
-    return [];
-  }
-
-  return Object.keys(config.accounts).filter(
-    accountId => config.accounts[accountId]?.enabled !== false
-  );
-}
-
-async function resolveAccount(accountId: string): Promise<ChannelConfig | null> {
-  const config = await loadConfig();
-  if (!config || !config.accounts[accountId]) {
-    return null;
-  }
-
-  const accountConfig = config.accounts[accountId];
-
-  return {
-    id: accountId,
-    label: accountConfig.wsUrl,
-    // Status will be populated by getStatus()
-    status: await getConnectionStatus(accountId),
-  };
-}
-
-async function loadConfig(): Promise<PluginConfig | null> {
-  if (pluginConfig) {
-    return pluginConfig;
-  }
-
-  try {
-    const rawConfig = await api.config.get('channels.qq');
-    if (!rawConfig || typeof rawConfig !== 'object') {
-      logWarn('config', 'No QQ channel configuration found');
+  setup: {
+    validateInput: ({ input }: any) => {
+      if (!input.wsUrl) {
+        return "QQ NapCat requires --ws-url (NapCat WebSocket URL)";
+      }
       return null;
-    }
+    },
+    applyAccountConfig: ({ cfg, accountId, input }: any) => {
+      return applyQQNapCatAccountConfig(cfg, accountId, {
+        wsUrl: input.wsUrl,
+        accessToken: input.accessToken ?? "",
+        name: input.name,
+      });
+    },
+  },
 
-    pluginConfig = rawConfig as PluginConfig;
+  outbound: {
+    deliveryMode: "direct",
+    textChunkLimit: 2000,
+    sendText: async ({ to, text, accountId, cfg }: any) => {
+      const account = resolveQQNapCatAccount(cfg, accountId);
+      if (!account) {
+        return {
+          channel: "qq-napcat",
+          messageId: "",
+          error: new Error(`Account not found: ${accountId}`),
+        };
+      }
 
-    // Set up connections for all accounts
-    await setupConnections(pluginConfig);
+      const conn = connectionManager?.getConnection(accountId);
+      if (!conn || !conn.isConnected()) {
+        return {
+          channel: "qq-napcat",
+          messageId: "",
+          error: new Error(`Not connected for account: ${accountId}`),
+        };
+      }
 
-    return pluginConfig;
-  } catch (error) {
-    logError('config', 'Failed to load configuration:', error);
-    return null;
-  }
-}
+      // Parse target (format: private:xxx or group:xxx)
+      const parts = to.split(":");
+      const type = parts[0];
+      const id = parts[1];
+      const chatType = type === "group" ? "group" : "direct";
+      const chatId = id || to;
 
-async function setupConnections(config: PluginConfig): Promise<void> {
-  const accountIds = Object.keys(config.accounts);
+      try {
+        const messageSegments = openClawToNapCatMessage([{ type: "text", text }]);
 
-  logInfo('plugin', `Setting up connections for ${accountIds.length} account(s)`);
+        let response;
+        if (chatType === "direct") {
+          response = await conn.sendRequest("send_private_msg", {
+            user_id: Number(chatId),
+            message: messageSegments,
+          });
+        } else {
+          response = await conn.sendRequest("send_group_msg", {
+            group_id: Number(chatId),
+            message: messageSegments,
+          });
+        }
 
-  for (const accountId of accountIds) {
-    const accountConfig = config.accounts[accountId];
+        if (response.status === "ok" && response.data) {
+          const data = response.data as { message_id: number };
+          return {
+            channel: "qq-napcat",
+            messageId: messageIdToString(data.message_id),
+          };
+        } else {
+          return {
+            channel: "qq-napcat",
+            messageId: "",
+            error: new Error(response.msg || "Send failed"),
+          };
+        }
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        return {
+          channel: "qq-napcat",
+          messageId: "",
+          error: new Error(errorMessage),
+        };
+      }
+    },
+  },
 
-    // Skip disabled accounts
-    if (accountConfig.enabled === false) {
-      logDebug('plugin', `Account ${accountId} is disabled, skipping`);
-      continue;
-    }
+  gateway: {
+    startAccount: async (ctx: any) => {
+      const { account, log } = ctx;
 
-    // Add connection
-    const conn = connectionManager.addConnection(accountId, accountConfig);
+      log?.info(`[qq-napcat:${account.accountId}] Starting gateway`);
 
-    // Set up event handlers for this connection
-    conn.on('event', handleNapCatEvent);
-    conn.on('state-changed', handleConnectionStateChanged);
-    conn.on('account-connected', handleAccountConnected);
-    conn.on('account-failed', handleAccountFailed);
+      // Store runtime context
+      channelRuntimes.set(account.accountId, ctx);
 
-    // Start the connection
-    await conn.start().catch(err => {
-      logError('plugin', `Failed to start connection for ${accountId}:`, err);
-    });
-  }
+      // Start connection
+      const conn = connectionManager.addConnection(account.accountId, account);
 
-  // Start the background service for listening to events
-  await startEventService();
-}
+      conn.on("event", handleNapCatEvent);
+      conn.on("state-changed", (status: ConnectionStatus) => {
+        log?.info(`[qq-napcat:${account.accountId}] State: ${status.state}`);
+        if (status.state === "connected") {
+          ctx.setStatus({
+            ...ctx.getStatus(),
+            running: true,
+            connected: true,
+            lastConnectedAt: Date.now(),
+          });
+        }
+      });
+      conn.on("account-connected", () => {
+        log?.info(`[qq-napcat:${account.accountId}] Gateway ready`);
+      });
+      conn.on("account-failed", (error: string) => {
+        log?.warn(`[qq-napcat:${account.accountId}] Gateway failed: ${error}`);
+        ctx.setStatus({
+          ...ctx.getStatus(),
+          lastError: error,
+        });
+      });
+
+      await conn.start();
+    },
+    stopAccount: async (ctx: any) => {
+      const { account } = ctx;
+      const conn = connectionManager?.getConnection(account.accountId);
+      if (conn) {
+        await conn.stop();
+      }
+      channelRuntimes.delete(account.accountId);
+    },
+  },
+
+  status: {
+    defaultRuntime: {
+      accountId: DEFAULT_ACCOUNT_ID,
+      running: false,
+      connected: false,
+      lastConnectedAt: null,
+      lastError: null,
+    },
+    buildAccountSnapshot: ({ account, runtime }: any) => ({
+      accountId: account?.accountId ?? DEFAULT_ACCOUNT_ID,
+      name: account?.name ?? account?.wsUrl,
+      enabled: account?.enabled ?? false,
+      configured: Boolean(account?.wsUrl),
+      running: runtime?.running ?? false,
+      connected: runtime?.connected ?? false,
+      lastConnectedAt: runtime?.lastConnectedAt ?? null,
+      lastError: runtime?.lastError ?? null,
+    }),
+  },
+};
 
 // =============================================================================
-// Event Service (Background Service for Inbound Messages)
+// Event Handling
 // =============================================================================
 
-async function startEventService(): Promise<void> {
-  if (serviceLifecycle) {
+async function handleNapCatEvent(accountId: string, event: any): Promise<void> {
+  logDebug("events", `Received event: ${event.post_type}`);
+
+  const ctx = channelRuntimes.get(accountId);
+  if (!ctx) {
+    logWarn("events", `No runtime context for account: ${accountId}`);
     return;
   }
 
-  serviceLifecycle = await api.services.register({
-    id: 'qq-napcat-event-listener',
-    label: 'QQ NapCat Event Listener',
-
-    async start() {
-      logInfo('service', 'Event listener started');
-      // Connections are already started in setupConnections
-    },
-
-    async stop() {
-      logInfo('service', 'Event listener stopping');
-      await connectionManager.stopAll();
-    },
-  });
-
-  logInfo('service', 'Event listener service registered');
-}
-
-// =============================================================================
-// Inbound Message Handling
-// =============================================================================
-
-async function handleNapCatEvent(accountId: string, event: NapCatEvent): Promise<void> {
-  logDebug('events', `Received event: ${event.post_type}`);
-
   switch (event.post_type) {
-    case 'message_sent_type':
-      await handleGroupMessage(accountId, event as NapCatMessageSentEvent);
+    case "message_sent_type":
+      await handleGroupMessage(accountId, event, ctx);
       break;
 
-    case 'message_private_sent_type':
-      await handlePrivateMessage(accountId, event as NapCatPrivateMessageSentEvent);
+    case "message_private_sent_type":
+      await handlePrivateMessage(accountId, event, ctx);
       break;
 
-    case 'notice':
-      await handleNoticeEvent(accountId, event);
-      break;
-
-    case 'meta_event':
-      // Handle lifecycle events, heartbeat, etc.
-      handleMetaEvent(accountId, event);
+    case "notice":
+      await handleNoticeEvent(accountId, event, ctx);
       break;
 
     default:
-      logDebug('events', `Unhandled event type: ${event.post_type}`);
+      logDebug("events", `Unhandled event type: ${event.post_type}`);
   }
 }
 
-async function handleGroupMessage(
-  accountId: string,
-  event: NapCatMessageSentEvent
-): Promise<void> {
+async function handleGroupMessage(accountId: string, event: any, ctx: any): Promise<void> {
   const conn = connectionManager.getConnection(accountId);
-  if (!conn) {
-    return;
-  }
+  if (!conn) return;
 
-  // Cache bot user ID for routing
+  // Cache bot user ID
   if (event.self_id && !botUserIds.has(accountId)) {
     botUserIds.set(accountId, event.self_id);
     conn.setBotUserId(event.self_id);
   }
 
   const botUserId = conn.getBotUserId();
-
-  // Convert NapCat message to OpenClaw format
   const { content, isMention } = napCatToOpenClawMessage(event.message, botUserId);
 
-  const message: OpenClawMessage = {
+  const message = {
     id: messageIdToString(event.message_id),
-    channelId: 'qq',
+    channel: "qq-napcat",
     accountId,
     chatId: String(event.group_id),
-    chatType: 'group',
+    chatType: "group" as const,
     content,
     senderId: String(event.user_id),
     senderName: event.sender?.nickname || event.sender?.card,
-    timestamp: event.time * 1000, // Convert to milliseconds
+    timestamp: event.time * 1000,
     isMention,
   };
 
-  logDebug('events', `Group message: ${getMessageSummary(event.message)}`);
-
-  // Dispatch to OpenClaw
-  dispatchMessage(message);
+  logDebug("events", `Group message: ${getMessageSummary(event.message)}`);
+  ctx.dispatchMessage(message);
 }
 
-async function handlePrivateMessage(
-  accountId: string,
-  event: NapCatPrivateMessageSentEvent
-): Promise<void> {
+async function handlePrivateMessage(accountId: string, event: any, ctx: any): Promise<void> {
   const conn = connectionManager.getConnection(accountId);
-  if (!conn) {
-    return;
-  }
+  if (!conn) return;
 
-  // Cache bot user ID for routing
+  // Cache bot user ID
   if (event.self_id && !botUserIds.has(accountId)) {
     botUserIds.set(accountId, event.self_id);
     conn.setBotUserId(event.self_id);
   }
 
-  // Convert NapCat message to OpenClaw format
   const { content } = napCatToOpenClawMessage(event.message);
 
-  const message: OpenClawMessage = {
+  const message = {
     id: messageIdToString(event.message_id),
-    channelId: 'qq',
+    channel: "qq-napcat",
     accountId,
     chatId: String(event.user_id),
-    chatType: 'direct',
+    chatType: "direct" as const,
     content,
     senderId: String(event.user_id),
     senderName: event.sender?.nickname,
     timestamp: event.time * 1000,
   };
 
-  logDebug('events', `Private message: ${getMessageSummary(event.message)}`);
-
-  // Dispatch to OpenClaw
-  dispatchMessage(message);
+  logDebug("events", `Private message: ${getMessageSummary(event.message)}`);
+  ctx.dispatchMessage(message);
 }
 
-async function handleNoticeEvent(accountId: string, event: NapCatEvent): Promise<void> {
-  const noticeEvent = event as NapCatNoticeEvent;
+async function handleNoticeEvent(accountId: string, event: any, ctx: any): Promise<void> {
+  if (event.notice_type === "poke") {
+    const conn = connectionManager.getConnection(accountId);
+    if (!conn) return;
 
-  if (noticeEvent.notice_type === 'poke') {
-    await handlePokeEvent(accountId, noticeEvent as NapCatPokeEvent);
-  } else {
-    logDebug('events', `Notice event: ${noticeEvent.notice_type}`);
-  }
-}
+    const botUserId = conn.getBotUserId();
+    if (botUserId && event.target_id !== botUserId) return;
 
-async function handlePokeEvent(accountId: string, event: NapCatPokeEvent): Promise<void> {
-  const conn = connectionManager.getConnection(accountId);
-  if (!conn) {
-    return;
-  }
+    const message = {
+      id: generateMessageId(),
+      channel: "qq-napcat",
+      accountId,
+      chatId: event.group_id ? String(event.group_id) : String(event.user_id),
+      chatType: event.group_id ? ("group" as const) : ("direct" as const),
+      content: [{ type: "text" as const, text: `${event.sender_id} 戳了戳你` }],
+      senderId: String(event.user_id),
+      timestamp: event.time * 1000,
+    };
 
-  const botUserId = conn.getBotUserId();
-
-  // Only handle pokes directed at the bot
-  if (botUserId && event.target_id !== botUserId) {
-    return;
-  }
-
-  const message: OpenClawMessage = {
-    id: generateMessageId(),
-    channelId: 'qq',
-    accountId,
-    chatId: event.group_id ? String(event.group_id) : String(event.user_id),
-    chatType: event.group_id ? 'group' : 'direct',
-    content: [{
-      type: 'text',
-      text: `${event.sender_id} 戳了戳你`,
-    }],
-    senderId: String(event.user_id),
-    timestamp: event.time * 1000,
-  };
-
-  logInfo('events', `Poke event from ${event.user_id}`);
-
-  dispatchMessage(message);
-}
-
-function handleMetaEvent(accountId: string, event: NapCatEvent): void {
-  // Handle heartbeat, lifecycle events
-  logDebug('events', `Meta event: ${(event as NapCatMetaEvent).meta_event_type}`);
-}
-
-function dispatchMessage(message: OpenClawMessage): void {
-  if (channelHandler) {
-    channelHandler(message);
-  } else {
-    logWarn('events', 'No channel handler registered, message not dispatched');
+    ctx.dispatchMessage(message);
   }
 }
 
 // =============================================================================
-// Outbound Message Handling
+// Initialization
 // =============================================================================
 
-async function sendText(
-  accountId: string,
-  chatId: string,
-  chatType: 'direct' | 'group',
-  content: unknown
-): Promise<{ messageId: string } | { error: string }> {
-  const conn = connectionManager.getConnection(accountId);
-
-  if (!conn) {
-    return { error: `No connection found for account: ${accountId}` };
-  }
-
-  if (!conn.isConnected()) {
-    return { error: `Not connected for account: ${accountId}` };
-  }
-
-  try {
-    // Convert OpenClaw content to NapCat message segments
-    const messageSegments = openClawToNapCatMessage(content as OpenClawMessage['content']);
-
-    let response;
-
-    if (chatType === 'direct') {
-      // Private message
-      response = await conn.sendRequest('send_private_msg', {
-        user_id: Number(chatId),
-        message: messageSegments,
-      });
-    } else {
-      // Group message
-      response = await conn.sendRequest('send_group_msg', {
-        group_id: Number(chatId),
-        message: messageSegments,
-      });
-    }
-
-    if (response.status === 'ok' && response.data) {
-      const data = response.data as { message_id: number };
-      return { messageId: messageIdToString(data.message_id) };
-    } else {
-      return { error: response.msg || 'Send failed' };
-    }
-
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    logError('outbound', `Failed to send message: ${errorMessage}`);
-    return { error: errorMessage };
-  }
+export function initializePlugin(): void {
+  connectionManager = new MultiConnectionManager();
 }
 
-// =============================================================================
-// Connection State Handlers
-// =============================================================================
-
-function handleConnectionStateChanged(status: ConnectionStatus): void {
-  logInfo('connection', `Connection state changed: ${status.accountId} -> ${status.state}`);
-  // Notify OpenClaw of status change if needed
-}
-
-function handleAccountConnected(accountId: string): void {
-  logInfo('connection', `Account connected: ${accountId}`);
-}
-
-function handleAccountFailed(accountId: string): void {
-  logError('connection', `Account failed: ${accountId}`);
-}
-
-// =============================================================================
-// Status and Diagnostics
-// =============================================================================
-
-async function getConnectionStatus(accountId: string): Promise<string> {
-  const conn = connectionManager.getConnection(accountId);
-
-  if (!conn) {
-    return 'not_configured';
-  }
-
-  const status = conn.getStatus();
-
-  switch (status.state) {
-    case 'connected':
-      return 'connected';
-    case 'connecting':
-      return 'connecting';
-    case 'disconnected':
-      return 'disconnected';
-    case 'failed':
-      return 'failed';
-    default:
-      return 'unknown';
-  }
-}
-
-export async function getStatus(): Promise<Record<string, ConnectionStatus>> {
-  const statuses: Record<string, ConnectionStatus> = {};
-
-  for (const conn of connectionManager.getAllConnections()) {
-    statuses[conn.getAccountId()] = conn.getStatus();
-  }
-
-  return statuses;
-}
-
-// =============================================================================
-// Channel Handler Registration (called by OpenClaw)
-// =============================================================================
-
-export function onMessage(handler: (message: OpenClawMessage) => void): void {
-  channelHandler = handler;
-  logInfo('plugin', 'Channel handler registered');
-}
-
-// =============================================================================
-// Plugin Metadata
-// =============================================================================
-
-export const name = 'qq-napcat';
-export const version = '1.0.0';
-export const description = 'QQ channel plugin for OpenClaw using NapCat WebSocket API';
+// Auto-initialize on import
+initializePlugin();

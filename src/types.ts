@@ -312,6 +312,8 @@ export interface PluginConfig {
 }
 
 export interface AccountConfig {
+  accountId: string;
+  name?: string;
   wsUrl: string;
   accessToken?: string;
   enabled?: boolean;
