@@ -22,6 +22,7 @@ import {
   resolveQQNapCatAccount,
   applyQQNapCatAccountConfig,
 } from "./config.js";
+import { qqNapCatOnboardingAdapter } from "./onboarding.js";
 
 // =============================================================================
 // Plugin State
@@ -57,7 +58,10 @@ export const qqNapCatPlugin: ChannelPlugin<AccountConfig> = {
     reactions: false,
     threads: false,
   },
-  reload: { configPrefixes: ["channels.openclaw-channel-qq", "channels.qq"] },
+  reload: { configPrefixes: ["channels.openclaw-channel-qq"] },
+
+  // CLI onboarding wizard
+  onboarding: qqNapCatOnboardingAdapter,
 
   // 消息目标解析
   messaging: {
@@ -249,7 +253,7 @@ export const qqNapCatPlugin: ChannelPlugin<AccountConfig> = {
 // =============================================================================
 
 async function handleNapCatEvent(accountId: string, event: any): Promise<void> {
-  logDebug("events", `Received event: ${event.post_type}`);
+  logDebug("events", `Received event: ${event.post_type}, message_type: ${event.message_type}`);
 
   const ctx = channelRuntimes.get(accountId);
   if (!ctx) {
@@ -257,13 +261,14 @@ async function handleNapCatEvent(accountId: string, event: any): Promise<void> {
     return;
   }
 
+  // NapCat/OneBot 11 uses post_type: "message" with message_type: "private" or "group"
   switch (event.post_type) {
-    case "message_sent_type":
-      await handleGroupMessage(accountId, event, ctx);
-      break;
-
-    case "message_private_sent_type":
-      await handlePrivateMessage(accountId, event, ctx);
+    case "message":
+      if (event.message_type === "group") {
+        await handleGroupMessage(accountId, event, ctx);
+      } else if (event.message_type === "private") {
+        await handlePrivateMessage(accountId, event, ctx);
+      }
       break;
 
     case "notice":

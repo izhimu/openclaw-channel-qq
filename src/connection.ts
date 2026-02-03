@@ -295,8 +295,8 @@ export class ConnectionManager extends EventEmitter {
       // Set timeout to detect if we don't receive a response
       this.heartbeatTimeoutTimer = setTimeout(() => {
         logWarn('connection', `Heartbeat timeout for account ${this.accountId}`);
-        // Force close and reconnect
-        this.ws?.close(1006, 'Heartbeat timeout');
+        // Force close and reconnect - use terminate() instead of close() for abnormal closure
+        this.ws?.terminate();
       }, HEARTBEAT_TIMEOUT);
 
       logDebug('connection', `Sent heartbeat for account ${this.accountId}`);

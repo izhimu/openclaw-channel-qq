@@ -1,9 +1,74 @@
 {
   "id": "openclaw-channel-qq",
+  "name": "QQ NapCat",
+  "description": "QQ channel plugin for OpenClaw using NapCat WebSocket API",
+  "version": "1.0.0",
   "channels": ["openclaw-channel-qq"],
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
-    "properties": {}
+    "properties": {
+      "enabled": {
+        "type": "boolean",
+        "default": false,
+        "description": "Enable the QQ NapCat channel"
+      },
+      "name": {
+        "type": "string",
+        "description": "Display name for this account"
+      },
+      "wsUrl": {
+        "type": "string",
+        "format": "uri",
+        "description": "NapCat WebSocket URL (e.g., ws://localhost:3001)"
+      },
+      "accessToken": {
+        "type": "string",
+        "description": "Optional access token for NapCat WebSocket"
+      },
+      "accounts": {
+        "type": "object",
+        "description": "Multiple account configurations",
+        "additionalProperties": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true
+            },
+            "name": {
+              "type": "string"
+            },
+            "wsUrl": {
+              "type": "string",
+              "format": "uri"
+            },
+            "accessToken": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "uiHints": {
+    "enabled": {
+      "label": "Enabled",
+      "sensitive": false
+    },
+    "name": {
+      "label": "Account Name",
+      "sensitive": false
+    },
+    "wsUrl": {
+      "label": "WebSocket URL",
+      "placeholder": "ws://localhost:3001",
+      "sensitive": false
+    },
+    "accessToken": {
+      "label": "Access Token",
+      "sensitive": true
+    }
   }
 }
