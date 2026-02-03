@@ -451,7 +451,7 @@ async function dispatchMessage(params: {
     SenderId: senderId,
     SenderName: senderName,
     Provider: "openclaw-channel-qq",
-    Surface: "qq",
+    Surface: "openclaw-channel-qq",
     MessageSid: messageId,
     Timestamp: timestamp,
     OriginatingChannel: "openclaw-channel-qq",
