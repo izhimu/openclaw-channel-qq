@@ -45,14 +45,20 @@ ws:
 
 Edit your OpenClaw config file:
 
-```yaml
-channels:
-  openclaw-channel-qq:
-    accounts:
-      bot1:
-        wsUrl: ws://127.0.0.1:3001
-        accessToken: ""  # Optional
-        enabled: true
+```json
+{
+  "channels": {
+    "openclaw-channel-qq": {
+      "accounts": {
+        "bot1": {
+          "wsUrl": "ws://127.0.0.1:3001",
+          "accessToken": "",
+          "enabled": true
+        }
+      }
+    }
+  }
+}
 ```
 
 ### 4. Restart Gateway
