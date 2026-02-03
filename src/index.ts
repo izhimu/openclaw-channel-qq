@@ -188,7 +188,7 @@ export const qqNapCatPlugin: ChannelPlugin<AccountConfig> = {
       // Start connection
       const conn = connectionManager.addConnection(account.accountId, account);
 
-      conn.on("event", handleNapCatEvent);
+      conn.on("event", (event) => handleNapCatEvent(account.accountId, event));
       conn.on("state-changed", (status: ConnectionStatus) => {
         log?.info(`[openclaw-channel-qq:${account.accountId}] State: ${status.state}`);
         if (status.state === "connected") {

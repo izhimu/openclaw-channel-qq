@@ -92,7 +92,7 @@ Configure the plugin in your OpenClaw configuration file:
 ```json
 {
   "channels": {
-    "qq": {
+    "openclaw-channel-qq": {
       "accounts": {
         "bot1": {
           "wsUrl": "ws://127.0.0.1:3001",
