@@ -1,4 +1,5 @@
 {
+  "id": "qq-napcat",
   "name": "qq-napcat",
   "version": "1.0.0",
   "description": "QQ channel plugin for OpenClaw using NapCat WebSocket API",
