@@ -99,14 +99,17 @@ export class ConnectionManager extends EventEmitter {
     this.setState('connecting');
 
     try {
-      const headers: Record<string, string> = {};
+      // Build WebSocket URL with access_token query parameter (NapCat OneBot 11 standard)
+      let wsUrl = this.config.wsUrl;
       if (this.config.accessToken) {
-        headers['Authorization'] = `Bearer ${this.config.accessToken}`;
+        const url = new URL(wsUrl);
+        url.searchParams.set('access_token', this.config.accessToken);
+        wsUrl = url.toString();
       }
 
-      logInfo('connection', `Connecting to ${this.config.wsUrl} for account ${this.accountId}`);
+      logInfo('connection', `Connecting to ${wsUrl} for account ${this.accountId}`);
 
-      this.ws = new WebSocket(this.config.wsUrl, { headers });
+      this.ws = new WebSocket(wsUrl);
 
       this.ws.on('open', this.handleOpen.bind(this));
       this.ws.on('message', this.handleMessage.bind(this));
