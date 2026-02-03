@@ -5,4 +5,5 @@ package-lock.json
 # IDE
 .claude/
 .vscode/
-.idea/
+.idea/.openspec
+openspec/
