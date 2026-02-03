@@ -75,24 +75,43 @@ Follow the prompts to configure your QQ bot account.
 
 Add to your OpenClaw config:
 
-```yaml
-channels:
-  openclaw-channel-qq:
-    # Single account (default)
-    wsUrl: ws://127.0.0.1:3001
-    accessToken: ""  # Optional
-    enabled: true
+```json
+{
+  "channels": {
+    "openclaw-channel-qq": {
+      "accounts": {
+        "bot1": {
+          "wsUrl": "ws://127.0.0.1:3001",
+          "accessToken": "",
+          "enabled": true
+        }
+      }
+    }
+  }
+}
+```
 
-    # Or multiple accounts
-    accounts:
-      bot1:
-        wsUrl: ws://127.0.0.1:3001
-        accessToken: ""
-        enabled: true
-      bot2:
-        wsUrl: ws://127.0.0.1:3002
-        accessToken: "your-token"
-        enabled: true
+Or multiple accounts:
+
+```json
+{
+  "channels": {
+    "openclaw-channel-qq": {
+      "accounts": {
+        "bot1": {
+          "wsUrl": "ws://127.0.0.1:3001",
+          "accessToken": "",
+          "enabled": true
+        },
+        "bot2": {
+          "wsUrl": "ws://127.0.0.1:3002",
+          "accessToken": "your-token",
+          "enabled": true
+        }
+      }
+    }
+  }
+}
 ```
 
 | Property | Type | Required | Description |
