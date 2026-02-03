@@ -6,7 +6,6 @@
 import type { ChannelPlugin } from "openclaw/plugin-sdk";
 import type { AccountConfig, ConnectionStatus } from "./types.js";
 import {
-  generateMessageId,
   messageIdToString,
   logDebug,
   logWarn,
@@ -15,7 +14,6 @@ import { MultiConnectionManager } from "./connection.js";
 import {
   napCatToOpenClawMessage,
   openClawToNapCatMessage,
-  getMessageSummary,
 } from "./adapters.js";
 import {
   listQQNapCatAccountIds,
@@ -33,8 +31,8 @@ let connectionManager: MultiConnectionManager;
 // Bot user ID cache for routing
 const botUserIds = new Map<string, number>();
 
-// Channel runtime per account
-const channelRuntimes = new Map<string, any>();
+// Channel gateway contexts per account (for cfg, log, setStatus)
+const gatewayContexts = new Map<string, any>();
 
 const DEFAULT_ACCOUNT_ID = "default";
 
@@ -187,7 +185,7 @@ export const qqNapCatPlugin: ChannelPlugin<AccountConfig> = {
       log?.info(`[openclaw-channel-qq:${account.accountId}] Starting gateway`);
 
       // Store runtime context
-      channelRuntimes.set(account.accountId, ctx);
+      gatewayContexts.set(account.accountId, ctx);
 
       // Start connection
       const conn = connectionManager.addConnection(account.accountId, account);
@@ -223,7 +221,7 @@ export const qqNapCatPlugin: ChannelPlugin<AccountConfig> = {
       if (conn) {
         await conn.stop();
       }
-      channelRuntimes.delete(account.accountId);
+      gatewayContexts.delete(account.accountId);
     },
   },
 
@@ -255,24 +253,29 @@ export const qqNapCatPlugin: ChannelPlugin<AccountConfig> = {
 async function handleNapCatEvent(accountId: string, event: any): Promise<void> {
   logDebug("events", `Received event: ${event.post_type}, message_type: ${event.message_type}`);
 
-  const ctx = channelRuntimes.get(accountId);
+  const ctx = gatewayContexts.get(accountId);
   if (!ctx) {
-    logWarn("events", `No runtime context for account: ${accountId}`);
+    logWarn("events", `No gateway context for account: ${accountId}`);
     return;
   }
+
+  const { account, cfg, log } = ctx;
 
   // NapCat/OneBot 11 uses post_type: "message" with message_type: "private" or "group"
   switch (event.post_type) {
     case "message":
       if (event.message_type === "group") {
-        await handleGroupMessage(accountId, event, ctx);
+        await handleGroupMessage(accountId, event, { account, cfg, log });
       } else if (event.message_type === "private") {
-        await handlePrivateMessage(accountId, event, ctx);
+        await handlePrivateMessage(accountId, event, { account, cfg, log });
       }
       break;
 
     case "notice":
-      await handleNoticeEvent(accountId, event, ctx);
+      // Notice events (like poke) are handled but don't trigger AI responses
+      if (event.notice_type === "poke") {
+        await handlePokeEvent(accountId, event, { account, cfg, log });
+      }
       break;
 
     default:
@@ -280,7 +283,12 @@ async function handleNapCatEvent(accountId: string, event: any): Promise<void> {
   }
 }
 
-async function handleGroupMessage(accountId: string, event: any, ctx: any): Promise<void> {
+async function handleGroupMessage(
+  accountId: string,
+  event: any,
+  ctx: { account: any; cfg: any; log?: any }
+): Promise<void> {
+  const { account, cfg, log } = ctx;
   const conn = connectionManager.getConnection(accountId);
   if (!conn) return;
 
@@ -293,24 +301,39 @@ async function handleGroupMessage(accountId: string, event: any, ctx: any): Prom
   const botUserId = conn.getBotUserId();
   const { content, isMention } = napCatToOpenClawMessage(event.message, botUserId);
 
-  const message = {
-    id: messageIdToString(event.message_id),
-    channel: "openclaw-channel-qq",
+  // Convert content array to plain text for the message body
+  const plainText = content.map((c: any) => {
+    if (c.type === "text") return c.text;
+    if (c.type === "at") return c.isAll ? "@全体成员" : `@${c.userId}`;
+    if (c.type === "image") return "[图片]";
+    if (c.type === "reply") return "[回复]";
+    if (c.type === "face") return c.text || "[表情]";
+    return "";
+  }).join("");
+
+  log?.info(`[openclaw-channel-qq:${accountId}] Group message from ${event.sender?.nickname || event.sender?.card || event.user_id}: ${plainText}`);
+
+  await dispatchMessage({
     accountId,
+    cfg,
+    log,
+    chatType: "group",
     chatId: String(event.group_id),
-    chatType: "group" as const,
-    content,
     senderId: String(event.user_id),
     senderName: event.sender?.nickname || event.sender?.card,
+    messageId: String(event.message_id),
+    content: plainText,
     timestamp: event.time * 1000,
-    isMention,
-  };
-
-  logDebug("events", `Group message: ${getMessageSummary(event.message)}`);
-  ctx.dispatchMessage(message);
+    conn,
+  });
 }
 
-async function handlePrivateMessage(accountId: string, event: any, ctx: any): Promise<void> {
+async function handlePrivateMessage(
+  accountId: string,
+  event: any,
+  ctx: { account: any; cfg: any; log?: any }
+): Promise<void> {
+  const { account, cfg, log } = ctx;
   const conn = connectionManager.getConnection(accountId);
   if (!conn) return;
 
@@ -322,42 +345,164 @@ async function handlePrivateMessage(accountId: string, event: any, ctx: any): Pr
 
   const { content } = napCatToOpenClawMessage(event.message);
 
-  const message = {
-    id: messageIdToString(event.message_id),
-    channel: "openclaw-channel-qq",
+  // Convert content array to plain text for the message body
+  const plainText = content.map((c: any) => {
+    if (c.type === "text") return c.text;
+    if (c.type === "at") return c.isAll ? "@全体成员" : `@${c.userId}`;
+    if (c.type === "image") return "[图片]";
+    if (c.type === "reply") return "[回复]";
+    if (c.type === "face") return c.text || "[表情]";
+    return "";
+  }).join("");
+
+  log?.info(`[openclaw-channel-qq:${accountId}] Private message from ${event.sender?.nickname || event.user_id}: ${plainText}`);
+
+  await dispatchMessage({
     accountId,
+    cfg,
+    log,
+    chatType: "direct",
     chatId: String(event.user_id),
-    chatType: "direct" as const,
-    content,
     senderId: String(event.user_id),
     senderName: event.sender?.nickname,
+    messageId: String(event.message_id),
+    content: plainText,
     timestamp: event.time * 1000,
-  };
-
-  logDebug("events", `Private message: ${getMessageSummary(event.message)}`);
-  ctx.dispatchMessage(message);
+    conn,
+  });
 }
 
-async function handleNoticeEvent(accountId: string, event: any, ctx: any): Promise<void> {
-  if (event.notice_type === "poke") {
-    const conn = connectionManager.getConnection(accountId);
-    if (!conn) return;
+async function handlePokeEvent(
+  accountId: string,
+  event: any,
+  ctx: { account: any; cfg: any; log?: any }
+): Promise<void> {
+  const conn = connectionManager.getConnection(accountId);
+  if (!conn) return;
 
-    const botUserId = conn.getBotUserId();
-    if (botUserId && event.target_id !== botUserId) return;
+  const botUserId = conn.getBotUserId();
+  if (botUserId && event.target_id !== botUserId) return;
 
-    const message = {
-      id: generateMessageId(),
-      channel: "openclaw-channel-qq",
-      accountId,
-      chatId: event.group_id ? String(event.group_id) : String(event.user_id),
-      chatType: event.group_id ? ("group" as const) : ("direct" as const),
-      content: [{ type: "text" as const, text: `${event.sender_id} 戳了戳你` }],
-      senderId: String(event.user_id),
-      timestamp: event.time * 1000,
-    };
+  ctx.log?.info(`[openclaw-channel-qq:${accountId}] Poke from ${event.user_id}`);
+  // Poke events don't trigger AI responses, just log them
+}
 
-    ctx.dispatchMessage(message);
+async function dispatchMessage(params: {
+  accountId: string;
+  cfg: any;
+  log?: any;
+  chatType: "direct" | "group";
+  chatId: string;
+  senderId: string;
+  senderName?: string;
+  messageId: string;
+  content: string;
+  timestamp: number;
+  conn: any;
+}): Promise<void> {
+  const { accountId, cfg, log, chatType, chatId, senderId, senderName, messageId, content, timestamp, conn } = params;
+
+  // Import here to avoid circular dependency
+  const { getNapCatRuntime } = await import("./runtime.js");
+  const pluginRuntime = getNapCatRuntime();
+
+  const isGroup = chatType === "group";
+  const peerId = isGroup ? `group:${chatId}` : senderId;
+
+  // Resolve agent route
+  const route = pluginRuntime.channel.routing.resolveAgentRoute({
+    cfg,
+    channel: "openclaw-channel-qq",
+    accountId,
+    peer: {
+      kind: isGroup ? "group" : "dm",
+      id: peerId,
+    },
+  });
+
+  const envelopeOptions = pluginRuntime.channel.reply.resolveEnvelopeFormatOptions(cfg);
+
+  // Format inbound message
+  const body = pluginRuntime.channel.reply.formatInboundEnvelope({
+    channel: "QQ",
+    from: senderName || senderId,
+    timestamp,
+    body: content,
+    chatType: isGroup ? "group" : "direct",
+    sender: {
+      id: senderId,
+      name: senderName,
+    },
+    envelope: envelopeOptions,
+  });
+
+  const fromAddress = isGroup ? `openclaw-channel-qq:group:${chatId}` : `openclaw-channel-qq:private:${senderId}`;
+  const toAddress = fromAddress;
+
+  const ctxPayload = pluginRuntime.channel.reply.finalizeInboundContext({
+    Body: body,
+    RawBody: content,
+    CommandBody: content,
+    From: fromAddress,
+    To: toAddress,
+    SessionKey: route.sessionKey,
+    AccountId: route.accountId,
+    ChatType: isGroup ? "group" : "direct",
+    SenderId: senderId,
+    SenderName: senderName,
+    Provider: "openclaw-channel-qq",
+    Surface: "qq",
+    MessageSid: messageId,
+    Timestamp: timestamp,
+    OriginatingChannel: "openclaw-channel-qq",
+    OriginatingTo: toAddress,
+  });
+
+  log?.info(`[openclaw-channel-qq:${accountId}] Dispatching to agent ${route.agentId}, session: ${route.sessionKey}`);
+
+  // Send function for delivering replies
+  const sendReply = async (text: string) => {
+    const messageSegments = [{ type: "text", data: { text } }];
+
+    try {
+      if (isGroup) {
+        await conn.sendRequest("send_group_msg", {
+          group_id: Number(chatId),
+          message: messageSegments,
+        });
+      } else {
+        await conn.sendRequest("send_private_msg", {
+          user_id: Number(chatId),
+          message: messageSegments,
+        });
+      }
+      log?.info(`[openclaw-channel-qq:${accountId}] Sent reply: ${text.slice(0, 100)}`);
+    } catch (error) {
+      log?.error(`[openclaw-channel-qq:${accountId}] Send failed: ${error}`);
+    }
+  };
+
+  // Dispatch the message for AI processing
+  try {
+    await pluginRuntime.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
+      ctx: ctxPayload,
+      cfg,
+      dispatcherOptions: {
+        deliver: async (payload: { text?: string }, info: { kind: string }) => {
+          log?.info(`[openclaw-channel-qq:${accountId}] Response (${info.kind}): ${payload.text?.slice(0, 100) || "(empty)"}`);
+          if (payload.text) {
+            await sendReply(payload.text);
+          }
+        },
+        onError: async (err: unknown) => {
+          log?.error(`[openclaw-channel-qq:${accountId}] Dispatch error: ${err}`);
+          await sendReply(`[错误] ${String(err).slice(0, 200)}`);
+        },
+      },
+      replyOptions: {},
+    });
+  } catch (error) {
+    log?.error(`[openclaw-channel-qq:${accountId}] Message processing failed: ${error}`);
   }
 }
 

@@ -23,16 +23,32 @@ import { logWarn, extractImageUrl, getEmojiForFaceId, getFaceIdForEmoji } from '
 // =============================================================================
 
 /**
+ * Normalize message to segments array (handles string or array format)
+ */
+function normalizeMessageSegments(message: NapCatMessageSegment[] | string): NapCatMessageSegment[] {
+  if (typeof message === 'string') {
+    return [{ type: 'text', data: { text: message } }];
+  }
+  if (!Array.isArray(message)) {
+    logWarn('adapters', `Invalid message format: ${typeof message}`);
+    return [{ type: 'text', data: { text: String(message) } }];
+  }
+  return message;
+}
+
+/**
  * Convert NapCat message segments to OpenClaw message content
  */
 export function napCatToOpenClawMessage(
-  segments: NapCatMessageSegment[],
+  segments: NapCatMessageSegment[] | string,
   botUserId?: number
 ): { content: OpenClawMessageContent[]; isMention: boolean } {
   const content: OpenClawMessageContent[] = [];
   let isMention = false;
 
-  for (const segment of segments) {
+  const normalizedSegments = normalizeMessageSegments(segments);
+
+  for (const segment of normalizedSegments) {
     const result = napCatSegmentToOpenClaw(segment, botUserId);
     if (result) {
       content.push(result);
