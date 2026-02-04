@@ -5,6 +5,7 @@
 
 import type { ChannelPlugin, ChannelOutboundContext } from "openclaw/plugin-sdk";
 import type { AccountConfig, ConnectionStatus, OutboundDeliveryResult } from "./types/index.js";
+import { qqNapCatChannelConfigSchema } from "./config-schema.js";
 import {
   messageIdToString,
   logDebug,
@@ -48,13 +49,20 @@ export const qqNapCatPlugin: ChannelPlugin<AccountConfig> = {
   },
   capabilities: {
     chatTypes: ["direct", "group"],
-    media: true,
+    polls: false,
     reactions: false,
+    edit: false,
+    unsend: false,
+    reply: true,
+    effects: true,
+    groupManagement: false,
     threads: false,
+    media: true,
     nativeCommands: true,
     blockStreaming: false,
   },
   reload: { configPrefixes: ["channels.openclaw-channel-qq"] },
+  configSchema: qqNapCatChannelConfigSchema,
 
   // CLI onboarding wizard
   onboarding: qqNapCatOnboardingAdapter,

@@ -18,7 +18,9 @@
   "author": "izhimu",
   "license": "MIT",
   "openclaw": {
-    "extensions": ["./index.ts"]
+    "extensions": [
+      "./index.ts"
+    ]
   },
   "peerDependencies": {
     "clawdbot": "*",
@@ -29,10 +31,11 @@
     "ws": "^8.19.0"
   },
   "devDependencies": {
-    "openclaw": "^2026.2.1",
     "@types/node": "^22.0.0",
     "@types/ws": "^8.18.0",
+    "openclaw": "^2026.2.1",
     "typescript": "^5.0.0",
-    "vitest": "^2.0.0"
+    "vitest": "^2.0.0",
+    "zod": "^4.3.6"
   }
 }
