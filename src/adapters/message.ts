@@ -11,11 +11,15 @@ import type {
   NapCatFaceSegment,
   NapCatPokeSegment,
   NapCatFileSegment,
+  NapCatRecordSegment,
+  NapCatJsonSegment,
   OpenClawMessageContent,
   OpenClawTextContent,
   OpenClawAtContent,
   OpenClawImageContent,
   OpenClawReplyContent,
+  OpenClawAudioContent,
+  OpenClawLocationContent,
 } from '../types/index.js';
 import { logWarn, extractImageUrl, getEmojiForFaceId, getFaceIdForEmoji } from '../utils/index.js';
 
@@ -280,6 +284,20 @@ function isFileSegment(segment: NapCatMessageSegment): segment is NapCatFileSegm
 }
 
 /**
+ * Type guard for record (audio) segment
+ */
+function isRecordSegment(segment: NapCatMessageSegment): segment is NapCatRecordSegment {
+  return segment.type === 'record';
+}
+
+/**
+ * Type guard for json segment
+ */
+function isJsonSegment(segment: NapCatMessageSegment): segment is NapCatJsonSegment {
+  return segment.type === 'json';
+}
+
+/**
  * Convert a single NapCat segment to OpenClaw format
  */
 function napCatSegmentToOpenClaw(
@@ -309,6 +327,8 @@ function napCatSegmentToOpenClaw(
       return isFileSegment(segment) ? napCatFileToOpenClaw(segment) : null;
 
     case 'record':
+      return isRecordSegment(segment) ? napCatRecordToOpenClaw(segment) : null;
+
     case 'video':
       // Unsupported types - log and skip
       logWarn('adapters', `Unsupported message type (inbound): ${segment.type}`);
@@ -319,9 +339,7 @@ function napCatSegmentToOpenClaw(
 
     case 'xml':
     case 'json':
-      // XML/JSON messages - skip or show as placeholder
-      logWarn('adapters', `Skipping ${segment.type} message`);
-      return null;
+      return isJsonSegment(segment) ? napCatJsonToOpenClaw(segment) : null;
 
     default:
       logWarn('adapters', `Unknown message type (inbound): ${segment.type}`);
@@ -361,6 +379,7 @@ function napCatImageToOpenClaw(segment: NapCatImageSegment): OpenClawImageConten
     return {
       type: 'image',
       url,
+      summary: segment.data.summary,
     };
   }
 
@@ -427,6 +446,81 @@ function napCatFileToOpenClaw(segment: NapCatFileSegment): OpenClawTextContent {
     type: 'text',
     text,
   };
+}
+
+function napCatRecordToOpenClaw(segment: NapCatRecordSegment): OpenClawAudioContent | OpenClawTextContent {
+  const path = segment.data.path;
+  const file = segment.data.file;
+  const url = segment.data.url;
+  const fileSize = segment.data.file_size;
+
+  if (path) {
+    // Local file exists, use it
+    return {
+      type: 'audio',
+      path,
+      file,
+      url,
+      fileSize: fileSize ? parseInt(fileSize, 10) : undefined,
+    };
+  }
+
+  // No local file path - return placeholder
+  logWarn('adapters', 'Record segment without local path, using placeholder');
+  return {
+    type: 'text',
+    text: '[语音]',
+  };
+}
+
+/**
+ * Parse JSON message data (for location shares, etc.)
+ */
+interface JsonMessageData {
+  app?: string;
+  prompt?: string;
+  meta?: {
+    'Location.Search'?: {
+      address?: string;
+      lat?: string;
+      lng?: string;
+      name?: string;
+    };
+  };
+}
+
+function napCatJsonToOpenClaw(segment: NapCatJsonSegment): OpenClawLocationContent | OpenClawTextContent | null {
+  try {
+    const jsonData: JsonMessageData = JSON.parse(segment.data.data);
+
+    // Handle location share messages (com.tencent.map)
+    if (jsonData.app === 'com.tencent.map' && jsonData.meta?.['Location.Search']) {
+      const location = jsonData.meta['Location.Search'];
+      return {
+        type: 'location',
+        text: jsonData.prompt || '[位置]',
+        address: location.address,
+        name: location.name,
+        lat: location.lat,
+        lng: location.lng,
+      };
+    }
+
+    // For other JSON types, use the prompt if available
+    if (jsonData.prompt) {
+      return {
+        type: 'text',
+        text: jsonData.prompt,
+      };
+    }
+
+    // Unknown JSON type - skip
+    logWarn('adapters', `Unknown JSON message type: ${jsonData.app || 'unknown'}`);
+    return null;
+  } catch (error) {
+    logWarn('adapters', `Failed to parse JSON message: ${error}`);
+    return null;
+  }
 }
 
 function formatFileSize(size: string | number): string {
@@ -626,6 +720,31 @@ export function extractPlainTextFromSegments(segments: NapCatMessageSegment[]): 
           parts.push(`[文件] ${fileName}${sizeText}`);
         } else {
           parts.push('[文件]');
+        }
+        break;
+      case 'record':
+        if (isRecordSegment(segment)) {
+          const path = segment.data.path;
+          const file = segment.data.file;
+          parts.push(path ? `[语音](${path})` : `[语音](${file})`);
+        } else {
+          parts.push('[语音]');
+        }
+        break;
+      case 'json':
+        if (isJsonSegment(segment)) {
+          try {
+            const jsonData: JsonMessageData = JSON.parse(segment.data.data);
+            if (jsonData.prompt) {
+              parts.push(jsonData.prompt);
+            } else {
+              parts.push('[JSON消息]');
+            }
+          } catch {
+            parts.push('[JSON消息]');
+          }
+        } else {
+          parts.push('[JSON消息]');
         }
         break;
       default:

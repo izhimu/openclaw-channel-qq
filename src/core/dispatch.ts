@@ -5,8 +5,8 @@
 
 import type { AccountConfig, OpenClawMessageContent } from '../types/index.js';
 import type { ConnectionManager } from './connection.js';
-import { napCatToOpenClawMessage, napCatToOpenClawMessageAsync, type NapCatConnection } from '../adapters/message.js';
-import { logDebug, logWarn } from '../utils/index.js';
+import { napCatToOpenClawMessageAsync, type NapCatConnection } from '../adapters/message.js';
+import { logWarn } from '../utils/index.js';
 
 /**
  * Convert OpenClaw message content array to plain text
@@ -19,9 +19,12 @@ function contentToPlainText(content: OpenClawMessageContent[]): string {
         return c.text;
       case 'at':
         return c.isAll ? '@全体成员' : `@${c.userId}`;
-      case 'image':
+      case 'image': {
         // Include image URL so AI models can access the image
-        return c.url ? `[图片](${c.url})` : '[图片]';
+        // Use summary if available (e.g., "[动画表情]" for animated stickers)
+        const label = c.summary || '[图片]';
+        return c.url ? `${label}(${c.url})` : label;
+      }
       case 'reply':
         return '[回复]';
       default:

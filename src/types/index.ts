@@ -250,7 +250,9 @@ export interface NapCatRecordSegment {
   type: 'record';
   data: {
     file: string;
+    path?: string;
     url?: string;
+    file_size?: string;
   };
 }
 
@@ -392,6 +394,8 @@ export interface OpenClawAtContent {
 export interface OpenClawImageContent {
   type: 'image';
   url: string;
+  /** Optional summary/description (e.g., "[动画表情]" for animated stickers) */
+  summary?: string;
 }
 
 export interface OpenClawReplyContent {
@@ -399,11 +403,39 @@ export interface OpenClawReplyContent {
   messageId: string;
 }
 
+export interface OpenClawAudioContent {
+  type: 'audio';
+  /** Local file path to the audio file */
+  path: string;
+  /** Optional URL for downloading the audio */
+  url?: string;
+  /** File name */
+  file: string;
+  /** File size in bytes */
+  fileSize?: number;
+}
+
+export interface OpenClawLocationContent {
+  type: 'location';
+  /** Display text/prompt */
+  text: string;
+  /** Address */
+  address?: string;
+  /** Name of the location */
+  name?: string;
+  /** Latitude */
+  lat?: string;
+  /** Longitude */
+  lng?: string;
+}
+
 export type OpenClawMessageContent =
   | OpenClawTextContent
   | OpenClawAtContent
   | OpenClawImageContent
-  | OpenClawReplyContent;
+  | OpenClawReplyContent
+  | OpenClawAudioContent
+  | OpenClawLocationContent;
 
 // =============================================================================
 // Send Message Parameters
