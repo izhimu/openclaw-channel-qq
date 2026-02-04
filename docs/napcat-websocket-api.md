@@ -135,7 +135,7 @@ NapCat 使用消息段（Message Segment）数组来表示复杂的消息内容�
 {
     "type": "at",
     "data": {
-        "qq": "123456789"
+        "qq": "654321"
     }
 }
 ```
@@ -300,7 +300,7 @@ NapCat 使用消息段（Message Segment）数组来表示复杂的消息内容�
 {
     "type": "poke",
     "data": {
-        "type": "123456789"
+        "type": "654321"
     }
 }
 ```
@@ -340,7 +340,7 @@ NapCat 使用消息段（Message Segment）数组来表示复杂的消息内容�
     "type": "contact",
     "data": {
         "type": "qq",
-        "id": "123456789"
+        "id": "654321"
     }
 }
 ```
@@ -405,7 +405,7 @@ NapCat 使用消息段（Message Segment）数组来表示复杂的消息内容�
 {
     "type": "node",
     "data": {
-        "user_id": "123456789",
+        "user_id": "654321",
         "nickname": "昵称",
         "content": "消息内容"
     }
@@ -497,7 +497,7 @@ NapCat 使用消息段（Message Segment）数组来表示复杂的消息内容�
     "action": "send_msg",
     "params": {
         "message_type": "private",
-        "user_id": "123456789",
+        "user_id": "654321",
         "message": "hello"
     }
 }
@@ -593,7 +593,7 @@ NapCat 使用消息段（Message Segment）数组来表示复杂的消息内容�
 {
     "action": "get_friend_msg_history",
     "params": {
-        "user_id": "123456789",
+        "user_id": "654321",
         "message_seq": "0",
         "count": 20
     }
@@ -656,7 +656,7 @@ NapCat 使用消息段（Message Segment）数组来表示复杂的消息内容�
     "retcode": 0,
     "data": [
         {
-            "user_id": 123456789,
+            "user_id": 654321,
             "nickname": "昵称",
             "remark": "备注",
             "sex": "male",
@@ -875,7 +875,7 @@ NapCat 会通过 WebSocket 连接主动上报各类事件。所有上报事件�
 ```json
 {
     "time": 1770180357,
-    "self_id": 2439176326,
+    "self_id": 123456,
     "post_type": "事件类型",
     // 其他事件特定字段
 }
@@ -903,7 +903,7 @@ WebSocket 连接成功时上报。
 ```json
 {
     "time": 1770180221,
-    "self_id": 2439176326,
+    "self_id": 123456,
     "post_type": "meta_event",
     "meta_event_type": "lifecycle",
     "sub_type": "connect"
@@ -927,7 +927,7 @@ NapCat 定时上报心跳，表明 Bot 在线状态。
 ```json
 {
     "time": 1770180250,
-    "self_id": 2439176326,
+    "self_id": 123456,
     "post_type": "meta_event",
     "meta_event_type": "heartbeat",
     "status": {
@@ -960,7 +960,7 @@ NapCat 定时上报心跳，表明 Bot 在线状态。
 
 ```json
 {
-    "self_id": 2439176326,
+    "self_id": 123456,
     "user_id": 1334642674,
     "time": 1770180357,
     "message_id": 100925776,
@@ -1009,8 +1009,8 @@ NapCat 定时上报心跳，表明 Bot 在线状态。
 
 ```json
 {
-    "self_id": 2439176326,
-    "user_id": 123456789,
+    "self_id": 123456,
+    "user_id": 654321,
     "time": 1770180400,
     "message_id": 100925777,
     "message_seq": 100925777,
@@ -1018,7 +1018,7 @@ NapCat 定时上报心跳，表明 Bot 在线状态。
     "real_seq": "840",
     "message_type": "group",
     "sender": {
-        "user_id": 123456789,
+        "user_id": 654321,
         "nickname": "昵称",
         "card": "群名片",
         "sex": "male",
@@ -1071,13 +1071,13 @@ Bot 发送消息后会上报此事件，格式与消息事件类似，但 `post_
 ```json
 {
     "time": 1770180500,
-    "self_id": 2439176326,
+    "self_id": 123456,
     "post_type": "notice",
     "notice_type": "group_increase",
     "sub_type": "approve",
     "group_id": 123456,
-    "user_id": 123456789,
-    "operator_id": 2439176326
+    "user_id": 654321,
+    "operator_id": 123456
 }
 ```
 
@@ -1101,13 +1101,13 @@ Bot 发送消息后会上报此事件，格式与消息事件类似，但 `post_
 ```json
 {
     "time": 1770180600,
-    "self_id": 2439176326,
+    "self_id": 123456,
     "post_type": "notice",
     "notice_type": "group_decrease",
     "sub_type": "kick",
     "group_id": 123456,
-    "user_id": 123456789,
-    "operator_id": 2439176326
+    "user_id": 654321,
+    "operator_id": 123456
 }
 ```
 
@@ -1127,13 +1127,13 @@ Bot 发送消息后会上报此事件，格式与消息事件类似，但 `post_
 ```json
 {
     "time": 1770180700,
-    "self_id": 2439176326,
+    "self_id": 123456,
     "post_type": "notice",
     "notice_type": "group_recall",
     "group_id": 123456,
-    "user_id": 123456789,
+    "user_id": 654321,
     "message_id": 100925777,
-    "operator_id": 123456789
+    "operator_id": 654321
 }
 ```
 
@@ -1149,10 +1149,10 @@ Bot 发送消息后会上报此事件，格式与消息事件类似，但 `post_
 ```json
 {
     "time": 1770180800,
-    "self_id": 2439176326,
+    "self_id": 123456,
     "post_type": "notice",
     "notice_type": "friend_recall",
-    "user_id": 123456789,
+    "user_id": 654321,
     "message_id": 100925778
 }
 ```
@@ -1169,12 +1169,12 @@ Bot 发送消息后会上报此事件，格式与消息事件类似，但 `post_
 ```json
 {
     "time": 1770180900,
-    "self_id": 2439176326,
+    "self_id": 123456,
     "post_type": "notice",
     "notice_type": "notify",
     "sub_type": "poke",
-    "user_id": 123456789,
-    "target_id": 2439176326,
+    "user_id": 654321,
+    "target_id": 123456,
     "group_id": 0
 }
 ```
@@ -1197,12 +1197,12 @@ Bot 发送消息后会上报此事件，格式与消息事件类似，但 `post_
 ```json
 {
     "time": 1770181000,
-    "self_id": 2439176326,
+    "self_id": 123456,
     "post_type": "notice",
     "notice_type": "group_admin",
     "sub_type": "set",
     "group_id": 123456,
-    "user_id": 123456789
+    "user_id": 654321
 }
 ```
 
@@ -1222,13 +1222,13 @@ Bot 发送消息后会上报此事件，格式与消息事件类似，但 `post_
 ```json
 {
     "time": 1770181100,
-    "self_id": 2439176326,
+    "self_id": 123456,
     "post_type": "notice",
     "notice_type": "group_ban",
     "sub_type": "ban",
     "group_id": 123456,
-    "user_id": 123456789,
-    "operator_id": 2439176326,
+    "user_id": 654321,
+    "operator_id": 123456,
     "duration": 600
 }
 ```
@@ -1250,11 +1250,11 @@ Bot 发送消息后会上报此事件，格式与消息事件类似，但 `post_
 ```json
 {
     "time": 1770181200,
-    "self_id": 2439176326,
+    "self_id": 123456,
     "post_type": "notice",
     "notice_type": "group_card",
     "group_id": 123456,
-    "user_id": 123456789,
+    "user_id": 654321,
     "card_new": "新名片",
     "card_old": "旧名片"
 }
@@ -1272,11 +1272,11 @@ Bot 发送消息后会上报此事件，格式与消息事件类似，但 `post_
 ```json
 {
     "time": 1770181300,
-    "self_id": 2439176326,
+    "self_id": 123456,
     "post_type": "notice",
     "notice_type": "group_upload",
     "group_id": 123456,
-    "user_id": 123456789,
+    "user_id": 654321,
     "file": {
         "id": "file_id_123",
         "name": "test.txt",
@@ -1298,10 +1298,10 @@ Bot 发送消息后会上报此事件，格式与消息事件类似，但 `post_
 ```json
 {
     "time": 1770181400,
-    "self_id": 2439176326,
+    "self_id": 123456,
     "post_type": "notice",
     "notice_type": "friend_add",
-    "user_id": 123456789
+    "user_id": 654321
 }
 ```
 
@@ -1317,11 +1317,11 @@ Bot 发送消息后会上报此事件，格式与消息事件类似，但 `post_
 ```json
 {
     "time": 1770181500,
-    "self_id": 2439176326,
+    "self_id": 123456,
     "post_type": "notice",
     "notice_type": "notify",
     "sub_type": "profile_like",
-    "user_id": 123456789,
+    "user_id": 654321,
     "times": 1
 }
 ```
@@ -1342,15 +1342,15 @@ Bot 发送消息后会上报此事件，格式与消息事件类似，但 `post_
 ```json
 {
     "time": 1770181600,
-    "self_id": 2439176326,
+    "self_id": 123456,
     "post_type": "notice",
     "notice_type": "notify",
     "sub_type": "input_status",
-    "user_id": 123456789,
+    "user_id": 654321,
     "group_id": 0,
     "typing": [
         {
-            "user_id": 123456789,
+            "user_id": 654321,
             "status": true
         }
     ]
@@ -1373,10 +1373,10 @@ Bot 发送消息后会上报此事件，格式与消息事件类似，但 `post_
 ```json
 {
     "time": 1770181700,
-    "self_id": 2439176326,
+    "self_id": 123456,
     "post_type": "request",
     "request_type": "friend",
-    "user_id": 123456789,
+    "user_id": 654321,
     "comment": "我是张三",
     "flag": "request_flag_123"
 }
@@ -1400,12 +1400,12 @@ Bot 发送消息后会上报此事件，格式与消息事件类似，但 `post_
 ```json
 {
     "time": 1770181800,
-    "self_id": 2439176326,
+    "self_id": 123456,
     "post_type": "request",
     "request_type": "group",
     "sub_type": "add",
     "group_id": 123456,
-    "user_id": 123456789,
+    "user_id": 654321,
     "comment": "请通过",
     "flag": "request_flag_456"
 }
@@ -1424,12 +1424,12 @@ Bot 发送消息后会上报此事件，格式与消息事件类似，但 `post_
 ```json
 {
     "time": 1770181900,
-    "self_id": 2439176326,
+    "self_id": 123456,
     "post_type": "request",
     "request_type": "group",
     "sub_type": "invite",
     "group_id": 123456,
-    "user_id": 123456789,
+    "user_id": 654321,
     "comment": "",
     "flag": "request_flag_789"
 }
