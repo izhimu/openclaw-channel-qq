@@ -1,42 +1,102 @@
 /**
  * Message Type Adapters for NapCat <-> OpenClaw conversion
+ *
+ * Optimized for maintainability with clear structure and minimal duplication.
  */
 
 import type {
   NapCatMessageSegment,
-  NapCatTextSegment,
-  NapCatAtSegment,
-  NapCatImageSegment,
-  NapCatReplySegment,
-  NapCatFaceSegment,
-  NapCatPokeSegment,
   NapCatFileSegment,
-  NapCatRecordSegment,
   NapCatJsonSegment,
   OpenClawMessageContent,
-  OpenClawTextContent,
-  OpenClawAtContent,
-  OpenClawImageContent,
-  OpenClawReplyContent,
-  OpenClawAudioContent,
   OpenClawLocationContent,
 } from '../types/index.js';
-import { logWarn, extractImageUrl, getEmojiForFaceId, getFaceIdForEmoji } from '../utils/index.js';
+import { logWarn, extractImageUrl, getEmojiForFaceId } from '../utils/index.js';
 
 // =============================================================================
-// NapCat -> OpenClaw Adapters (Inbound)
+// CQ Code Parsing
 // =============================================================================
 
 /**
- * CQ Code Parser
- * Parses CQ codes like [CQ:image,file=xxx,url=xxx] into segments
+ * Decode HTML entities in CQ code parameter values
+ */
+function decodeHtmlEntities(value: string): string {
+  return value
+    .replace(/&amp;/g, '&')
+    .replace(/&#91;/g, '[')
+    .replace(/&#93;/g, ']')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>');
+}
+
+/**
+ * Parse CQ code parameters string into key-value pairs
+ * Handles nested JSON objects/arrays that contain commas
+ */
+function parseCQParams(paramsStr: string): Record<string, string> {
+  const data: Record<string, string> = {};
+  let pos = 0;
+
+  while (pos < paramsStr.length) {
+    // Skip leading commas
+    if (paramsStr[pos] === ',') {
+      pos++;
+      continue;
+    }
+
+    // Match key (alphanumeric + underscore)
+    const keyMatch = paramsStr.slice(pos).match(/^(\w+)=/);
+    if (!keyMatch) break;
+
+    const key = keyMatch[1];
+    pos += keyMatch[0].length;
+
+    // Extract value based on what follows
+    let value = '';
+
+    if (paramsStr[pos] === '{') {
+      // JSON object value - find matching closing brace
+      let depth = 1;
+      let i = pos + 1;
+      while (i < paramsStr.length && depth > 0) {
+        if (paramsStr[i] === '{') depth++;
+        if (paramsStr[i] === '}') depth--;
+        i++;
+      }
+      value = paramsStr.slice(pos, i);
+      pos = i;
+    } else if (paramsStr[pos] === '[') {
+      // JSON array value - find matching closing bracket
+      let depth = 1;
+      let i = pos + 1;
+      while (i < paramsStr.length && depth > 0) {
+        if (paramsStr[i] === '[') depth++;
+        if (paramsStr[i] === ']') depth--;
+        i++;
+      }
+      value = paramsStr.slice(pos, i);
+      pos = i;
+    } else {
+      // Simple value - read until next comma or end
+      const nextComma = paramsStr.indexOf(',', pos);
+      value = nextComma === -1 ? paramsStr.slice(pos) : paramsStr.slice(pos, nextComma);
+      pos = nextComma === -1 ? paramsStr.length : nextComma;
+    }
+
+    data[key] = decodeHtmlEntities(value);
+  }
+
+  return data;
+}
+
+/**
+ * Parse CQ codes like [CQ:image,file=xxx,url=xxx] into segments
  */
 function parseCQCode(text: string): NapCatMessageSegment[] {
   const segments: NapCatMessageSegment[] = [];
-
-  // CQ code regex: [CQ:type,key=value,key2=value2,...]
   const cqRegex = /\[CQ:([a-zA-Z0-9_]+),([^\]]+)\]/g;
-
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
@@ -49,81 +109,7 @@ function parseCQCode(text: string): NapCatMessageSegment[] {
       }
     }
 
-    const type = match[1];
-    const paramsStr = match[2];
-
-    // Parse key=value pairs
-    // Handle complex values like JSON data that contain commas
-    const data: Record<string, string> = {};
-    let pos = 0;
-
-    while (pos < paramsStr.length) {
-      // Skip leading commas
-      if (paramsStr[pos] === ',') {
-        pos++;
-        continue;
-      }
-
-      // Match key (alphanumeric + underscore)
-      const keyMatch = paramsStr.slice(pos).match(/^(\w+)=/);
-      if (!keyMatch) break;
-
-      const key = keyMatch[1];
-      pos += keyMatch[0].length;
-
-      // Extract value based on what follows
-      let value = '';
-
-      if (paramsStr[pos] === '{') {
-        // JSON object value - find matching closing brace
-        let depth = 1;
-        let i = pos + 1;
-        while (i < paramsStr.length && depth > 0) {
-          if (paramsStr[i] === '{') depth++;
-          if (paramsStr[i] === '}') depth--;
-          i++;
-        }
-        value = paramsStr.slice(pos, i);
-        pos = i;
-      } else if (paramsStr[pos] === '[') {
-        // JSON array value - find matching closing bracket
-        let depth = 1;
-        let i = pos + 1;
-        while (i < paramsStr.length && depth > 0) {
-          if (paramsStr[i] === '[') depth++;
-          if (paramsStr[i] === ']') depth--;
-          i++;
-        }
-        value = paramsStr.slice(pos, i);
-        pos = i;
-      } else {
-        // Simple value - read until next comma or end
-        const nextComma = paramsStr.indexOf(',', pos);
-        if (nextComma === -1) {
-          value = paramsStr.slice(pos);
-          pos = paramsStr.length;
-        } else {
-          value = paramsStr.slice(pos, nextComma);
-          pos = nextComma;
-        }
-      }
-
-      // Decode HTML entities in values (e.g., &amp; -> &)
-      value = value
-        .replace(/&amp;/g, '&')
-        .replace(/&#91;/g, '[')
-        .replace(/&#93;/g, ']')
-        .replace(/&quot;/g, '"')
-        .replace(/&apos;/g, "'")
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>');
-
-      data[key] = value;
-    }
-
-    // Create segment based on type
-    segments.push({ type, data });
-
+    segments.push({ type: match[1], data: parseCQParams(match[2]) });
     lastIndex = cqRegex.lastIndex;
   }
 
@@ -136,11 +122,7 @@ function parseCQCode(text: string): NapCatMessageSegment[] {
   }
 
   // If no CQ codes found, return the whole text as a single segment
-  if (segments.length === 0) {
-    return [{ type: 'text', data: { text } }];
-  }
-
-  return segments;
+  return segments.length > 0 ? segments : [{ type: 'text', data: { text } }];
 }
 
 /**
@@ -148,7 +130,6 @@ function parseCQCode(text: string): NapCatMessageSegment[] {
  */
 function normalizeMessageSegments(message: NapCatMessageSegment[] | string): NapCatMessageSegment[] {
   if (typeof message === 'string') {
-    // Try to parse as CQ code string
     return parseCQCode(message);
   }
   if (!Array.isArray(message)) {
@@ -158,370 +139,10 @@ function normalizeMessageSegments(message: NapCatMessageSegment[] | string): Nap
   return message;
 }
 
-/**
- * Convert NapCat message segments to OpenClaw message content
- */
-export function napCatToOpenClawMessage(
-  segments: NapCatMessageSegment[] | string,
-  botUserId?: number
-): { content: OpenClawMessageContent[]; isMention: boolean } {
-  const content: OpenClawMessageContent[] = [];
-  let isMention = false;
+// =============================================================================
+// JSON Message Parsing (for location shares, etc.)
+// =============================================================================
 
-  const normalizedSegments = normalizeMessageSegments(segments);
-
-  for (const segment of normalizedSegments) {
-    const result = napCatSegmentToOpenClaw(segment, botUserId);
-    if (result) {
-      content.push(result);
-      if (result.type === 'at') {
-        // Check if the bot is being mentioned
-        if (botUserId && result.userId === String(botUserId)) {
-          isMention = true;
-        }
-      }
-    }
-  }
-
-  return { content, isMention };
-}
-
-/**
- * Connection interface for async operations
- */
-export interface NapCatConnection {
-  sendRequest: <T>(action: string, params?: Record<string, unknown>) => Promise<{
-    status: string;
-    msg?: string;
-    data?: T;
-  }>;
-}
-
-/**
- * Get file data from NapCat
- */
-interface GetFileData {
-  file?: string;
-  url?: string;
-  file_size?: string;
-  file_name?: string;
-  base64?: string;
-}
-
-/**
- * Enrich file segments with actual file data
- * This is an async operation that calls NapCat's get_file API
- */
-export async function enrichFileSegments(
-  segments: NapCatMessageSegment[],
-  connection?: NapCatConnection
-): Promise<NapCatMessageSegment[]> {
-  const enrichedSegments = [...segments];
-  const fileIndices: number[] = [];
-
-  for (let i = 0; i < enrichedSegments.length; i++) {
-    if (enrichedSegments[i].type === 'file') {
-      fileIndices.push(i);
-    }
-  }
-
-  if (fileIndices.length === 0 || !connection) {
-    return enrichedSegments;
-  }
-
-  for (const index of fileIndices) {
-    const segment = enrichedSegments[index] as NapCatFileSegment;
-    const fileId = segment.data.file_id || segment.data.file;
-
-    if (!fileId) continue;
-
-    try {
-      const response = await connection.sendRequest<GetFileData>('get_file', { file: fileId });
-
-      if (response.status === 'ok' && response.data) {
-        (segment.data as any).url = response.data.url;
-        (segment.data as any).base64 = response.data.base64;
-      }
-    } catch (error) {
-      logWarn('adapters', `Failed to fetch file data for ${fileId}: ${error}`);
-    }
-  }
-
-  return enrichedSegments;
-}
-
-/**
- * Convert NapCat message segments to OpenClaw message content (async version)
- * This version can fetch file content using get_file API
- */
-export async function napCatToOpenClawMessageAsync(
-  segments: NapCatMessageSegment[] | string,
-  botUserId?: number,
-  connection?: NapCatConnection
-): Promise<{ content: OpenClawMessageContent[]; isMention: boolean }> {
-  const normalizedSegments = normalizeMessageSegments(segments);
-  const enrichedSegments = await enrichFileSegments(normalizedSegments, connection);
-
-  const content: OpenClawMessageContent[] = [];
-  let isMention = false;
-
-  for (const segment of enrichedSegments) {
-    const result = napCatSegmentToOpenClaw(segment, botUserId);
-    if (result) {
-      content.push(result);
-      if (result.type === 'at') {
-        if (botUserId && result.userId === String(botUserId)) {
-          isMention = true;
-        }
-      }
-    }
-  }
-
-  return { content, isMention };
-}
-
-/**
- * Type guard for text segment
- */
-function isTextSegment(segment: NapCatMessageSegment): segment is NapCatTextSegment {
-  return segment.type === 'text';
-}
-
-/**
- * Type guard for at segment
- */
-function isAtSegment(segment: NapCatMessageSegment): segment is NapCatAtSegment {
-  return segment.type === 'at';
-}
-
-/**
- * Type guard for image segment
- */
-function isImageSegment(segment: NapCatMessageSegment): segment is NapCatImageSegment {
-  return segment.type === 'image';
-}
-
-/**
- * Type guard for reply segment
- */
-function isReplySegment(segment: NapCatMessageSegment): segment is NapCatReplySegment {
-  return segment.type === 'reply';
-}
-
-/**
- * Type guard for face segment
- */
-function isFaceSegment(segment: NapCatMessageSegment): segment is NapCatFaceSegment {
-  return segment.type === 'face';
-}
-
-/**
- * Type guard for poke segment
- */
-function isPokeSegment(segment: NapCatMessageSegment): segment is NapCatPokeSegment {
-  return segment.type === 'poke';
-}
-
-/**
- * Type guard for file segment
- */
-function isFileSegment(segment: NapCatMessageSegment): segment is NapCatFileSegment {
-  return segment.type === 'file';
-}
-
-/**
- * Type guard for record (audio) segment
- */
-function isRecordSegment(segment: NapCatMessageSegment): segment is NapCatRecordSegment {
-  return segment.type === 'record';
-}
-
-/**
- * Type guard for json segment
- */
-function isJsonSegment(segment: NapCatMessageSegment): segment is NapCatJsonSegment {
-  return segment.type === 'json';
-}
-
-/**
- * Convert a single NapCat segment to OpenClaw format
- */
-function napCatSegmentToOpenClaw(
-  segment: NapCatMessageSegment,
-  botUserId?: number
-): OpenClawMessageContent | null {
-  switch (segment.type) {
-    case 'text':
-      return isTextSegment(segment) ? napCatTextToOpenClaw(segment) : null;
-
-    case 'at':
-      return isAtSegment(segment) ? napCatAtToOpenClaw(segment) : null;
-
-    case 'image':
-      return isImageSegment(segment) ? napCatImageToOpenClaw(segment) : null;
-
-    case 'reply':
-      return isReplySegment(segment) ? napCatReplyToOpenClaw(segment) : null;
-
-    case 'face':
-      return isFaceSegment(segment) ? napCatFaceToOpenClaw(segment) : null;
-
-    case 'poke':
-      return isPokeSegment(segment) ? napCatPokeToOpenClaw(segment) : null;
-
-    case 'file':
-      return isFileSegment(segment) ? napCatFileToOpenClaw(segment) : null;
-
-    case 'record':
-      return isRecordSegment(segment) ? napCatRecordToOpenClaw(segment) : null;
-
-    case 'video':
-      // Unsupported types - log and skip
-      logWarn('adapters', `Unsupported message type (inbound): ${segment.type}`);
-      return {
-        type: 'text',
-        text: `[${segment.type}消息]`,
-      };
-
-    case 'xml':
-    case 'json':
-      return isJsonSegment(segment) ? napCatJsonToOpenClaw(segment) : null;
-
-    default:
-      logWarn('adapters', `Unknown message type (inbound): ${segment.type}`);
-      return null;
-  }
-}
-
-function napCatTextToOpenClaw(segment: NapCatTextSegment): OpenClawTextContent {
-  return {
-    type: 'text',
-    text: segment.data.text,
-  };
-}
-
-function napCatAtToOpenClaw(segment: NapCatAtSegment): OpenClawAtContent {
-  const qq = segment.data.qq;
-
-  if (qq === 'all') {
-    return {
-      type: 'at',
-      userId: 'all',
-      isAll: true,
-    };
-  }
-
-  return {
-    type: 'at',
-    userId: qq,
-    isAll: false,
-  };
-}
-
-function napCatImageToOpenClaw(segment: NapCatImageSegment): OpenClawImageContent | OpenClawTextContent | null {
-  const url = extractImageUrl(segment.data);
-
-  if (url) {
-    return {
-      type: 'image',
-      url,
-      summary: segment.data.summary,
-    };
-  }
-
-  // Local image without URL - return placeholder
-  logWarn('adapters', 'Image segment without URL, using placeholder');
-  return {
-    type: 'text',
-    text: '[图片]',
-  };
-}
-
-function napCatReplyToOpenClaw(segment: NapCatReplySegment): OpenClawReplyContent {
-  return {
-    type: 'reply',
-    messageId: segment.data.id,
-  };
-}
-
-function napCatFaceToOpenClaw(segment: NapCatFaceSegment): OpenClawTextContent {
-  const emoji = getEmojiForFaceId(segment.data.id);
-  return {
-    type: 'text',
-    text: emoji,
-  };
-}
-
-function napCatPokeToOpenClaw(_segment: NapCatPokeSegment): OpenClawTextContent {
-  return {
-    type: 'text',
-    text: '[戳一戳]',
-  };
-}
-
-function napCatFileToOpenClaw(segment: NapCatFileSegment): OpenClawTextContent {
-  const fileName = segment.data.file || 'unknown';
-  const fileSize = segment.data.file_size;
-  const sizeText = fileSize ? ` (${formatFileSize(fileSize)})` : '';
-  const url = (segment.data as any).url;
-  const base64 = (segment.data as any).base64;
-
-  // Build file info text
-  let text = `[文件] ${fileName}${sizeText}`;
-
-  // Add URL if available
-  if (url) {
-    text += `\n下载链接: ${url}`;
-  }
-
-  // Add base64 content for small text files
-  if (base64) {
-    // Decode base64 to check if it's text
-    try {
-      const decoded = atob(base64);
-      // Check if it looks like text (ASCII only, reasonable size)
-      if (decoded.length < 5000 && /^[\x20-\x7E\r\n\t]*$/.test(decoded)) {
-        text += `\n文件内容:\n${decoded}`;
-      }
-    } catch {
-      // Not valid base64, skip
-    }
-  }
-
-  return {
-    type: 'text',
-    text,
-  };
-}
-
-function napCatRecordToOpenClaw(segment: NapCatRecordSegment): OpenClawAudioContent | OpenClawTextContent {
-  const path = segment.data.path;
-  const file = segment.data.file;
-  const url = segment.data.url;
-  const fileSize = segment.data.file_size;
-
-  if (path) {
-    // Local file exists, use it
-    return {
-      type: 'audio',
-      path,
-      file,
-      url,
-      fileSize: fileSize ? parseInt(fileSize, 10) : undefined,
-    };
-  }
-
-  // No local file path - return placeholder
-  logWarn('adapters', 'Record segment without local path, using placeholder');
-  return {
-    type: 'text',
-    text: '[语音]',
-  };
-}
-
-/**
- * Parse JSON message data (for location shares, etc.)
- */
 interface JsonMessageData {
   app?: string;
   prompt?: string;
@@ -535,7 +156,7 @@ interface JsonMessageData {
   };
 }
 
-function napCatJsonToOpenClaw(segment: NapCatJsonSegment): OpenClawLocationContent | OpenClawTextContent | null {
+function parseJsonSegment(segment: NapCatJsonSegment): OpenClawLocationContent | OpenClawMessageContent | null {
   try {
     const jsonData: JsonMessageData = JSON.parse(segment.data.data);
 
@@ -554,13 +175,9 @@ function napCatJsonToOpenClaw(segment: NapCatJsonSegment): OpenClawLocationConte
 
     // For other JSON types, use the prompt if available
     if (jsonData.prompt) {
-      return {
-        type: 'text',
-        text: jsonData.prompt,
-      };
+      return { type: 'text', text: jsonData.prompt };
     }
 
-    // Unknown JSON type - skip
     logWarn('adapters', `Unknown JSON message type: ${jsonData.app || 'unknown'}`);
     return null;
   } catch (error) {
@@ -568,6 +185,10 @@ function napCatJsonToOpenClaw(segment: NapCatJsonSegment): OpenClawLocationConte
     return null;
   }
 }
+
+// =============================================================================
+// File Handling Helpers
+// =============================================================================
 
 function formatFileSize(size: string | number): string {
   const num = typeof size === 'string' ? parseInt(size, 10) : size;
@@ -577,14 +198,258 @@ function formatFileSize(size: string | number): string {
   return `${(num / (1024 * 1024)).toFixed(1)}MB`;
 }
 
+function formatFileInfo(segment: NapCatFileSegment): string {
+  const fileName = segment.data.file || 'unknown';
+  const fileSize = segment.data.file_size;
+  const sizeText = fileSize ? ` (${formatFileSize(fileSize)})` : '';
+  const url = (segment.data as any).url;
+  const base64 = (segment.data as any).base64;
+
+  let text = `[文件] ${fileName}${sizeText}`;
+
+  if (url) {
+    text += `\n下载链接: ${url}`;
+  }
+
+  // Add base64 content for small text files
+  if (base64) {
+    try {
+      const decoded = atob(base64);
+      if (decoded.length < 5000 && /^[\x20-\x7E\r\n\t]*$/.test(decoded)) {
+        text += `\n文件内容:\n${decoded}`;
+      }
+    } catch {
+      // Not valid base64, skip
+    }
+  }
+
+  return text;
+}
+
+// =============================================================================
+// NapCat -> OpenClaw Adapters (Inbound)
+// =============================================================================
+
+/**
+ * Convert a single NapCat segment to OpenClaw format
+ * Uses type assertions since segment.data is Record<string, unknown> in the union
+ */
+function napCatSegmentToOpenClaw(
+  segment: NapCatMessageSegment,
+  botUserId?: number
+): OpenClawMessageContent | null {
+  const data = segment.data as Record<string, unknown>;
+
+  switch (segment.type) {
+    case 'text':
+      return { type: 'text', text: String(data.text || '') };
+
+    case 'at':
+      return {
+        type: 'at',
+        userId: String(data.qq || ''),
+        isAll: data.qq === 'all',
+      };
+
+    case 'image': {
+      const url = extractImageUrl(data);
+      return url
+        ? { type: 'image', url, summary: data.summary as string | undefined }
+        : { type: 'text', text: '[图片]' };
+    }
+
+    case 'reply':
+      return { type: 'reply', messageId: String(data.id || '') };
+
+    case 'face':
+      return { type: 'text', text: getEmojiForFaceId(String(data.id || '')) };
+
+    case 'poke':
+      return { type: 'text', text: '[戳一戳]' };
+
+    case 'record':
+      return data.path
+        ? {
+            type: 'audio',
+            path: String(data.path),
+            file: String(data.file || ''),
+            url: data.url as string | undefined,
+            fileSize: data.file_size ? parseInt(String(data.file_size), 10) : undefined,
+          }
+        : { type: 'text', text: '[语音]' };
+
+    case 'file':
+      return { type: 'text', text: formatFileInfo(segment as NapCatFileSegment) };
+
+    case 'json':
+      return parseJsonSegment(segment as NapCatJsonSegment);
+
+    case 'video':
+      logWarn('adapters', `Unsupported message type (inbound): ${segment.type}`);
+      return { type: 'text', text: `[${segment.type}消息]` };
+
+    case 'xml':
+      logWarn('adapters', `Unsupported message type (inbound): ${segment.type}`);
+      return null;
+
+    default:
+      logWarn('adapters', `Unknown message type (inbound): ${segment.type}`);
+      return null;
+  }
+}
+
+/**
+ * Convert NapCat message segments to OpenClaw message content
+ */
+export function napCatToOpenClawMessage(
+  segments: NapCatMessageSegment[] | string,
+  botUserId?: number
+): { content: OpenClawMessageContent[]; isMention: boolean } {
+  const content: OpenClawMessageContent[] = [];
+  let isMention = false;
+
+  const normalizedSegments = normalizeMessageSegments(segments);
+
+  for (const segment of normalizedSegments) {
+    const result = napCatSegmentToOpenClaw(segment, botUserId);
+    if (result) {
+      content.push(result);
+      if (result.type === 'at' && botUserId && result.userId === String(botUserId)) {
+        isMention = true;
+      }
+    }
+  }
+
+  return { content, isMention };
+}
+
+// =============================================================================
+// Async File Enrichment
+// =============================================================================
+
+/**
+ * Connection interface for async operations
+ */
+export interface NapCatConnection {
+  sendRequest: <T>(action: string, params?: Record<string, unknown>) => Promise<{
+    status: string;
+    msg?: string;
+    data?: T;
+  }>;
+}
+
+interface GetFileData {
+  file?: string;
+  url?: string;
+  file_size?: string;
+  file_name?: string;
+  base64?: string;
+}
+
+/**
+ * Enrich file segments with actual file data from NapCat's get_file API
+ */
+async function enrichFileSegments(
+  segments: NapCatMessageSegment[],
+  connection?: NapCatConnection
+): Promise<NapCatMessageSegment[]> {
+  if (!connection) return segments;
+
+  const enrichedSegments = [...segments];
+  const fileIndices: number[] = [];
+
+  for (let i = 0; i < enrichedSegments.length; i++) {
+    if (enrichedSegments[i].type === 'file') {
+      fileIndices.push(i);
+    }
+  }
+
+  if (fileIndices.length === 0) return enrichedSegments;
+
+  for (const index of fileIndices) {
+    const segment = enrichedSegments[index] as NapCatFileSegment;
+    const fileId = segment.data.file_id || segment.data.file;
+    if (!fileId) continue;
+
+    try {
+      const response = await connection.sendRequest<GetFileData>('get_file', { file: fileId });
+      if (response.status === 'ok' && response.data) {
+        (segment.data as any).url = response.data.url;
+        (segment.data as any).base64 = response.data.base64;
+      }
+    } catch (error) {
+      logWarn('adapters', `Failed to fetch file data for ${fileId}: ${error}`);
+    }
+  }
+
+  return enrichedSegments;
+}
+
+/**
+ * Convert NapCat message segments to OpenClaw message content (async version)
+ * Fetches file data using get_file API
+ */
+export async function napCatToOpenClawMessageAsync(
+  segments: NapCatMessageSegment[] | string,
+  botUserId?: number,
+  connection?: NapCatConnection
+): Promise<{ content: OpenClawMessageContent[]; isMention: boolean }> {
+  const normalizedSegments = normalizeMessageSegments(segments);
+  const enrichedSegments = await enrichFileSegments(normalizedSegments, connection);
+
+  const content: OpenClawMessageContent[] = [];
+  let isMention = false;
+
+  for (const segment of enrichedSegments) {
+    const result = napCatSegmentToOpenClaw(segment, botUserId);
+    if (result) {
+      content.push(result);
+      if (result.type === 'at' && botUserId && result.userId === String(botUserId)) {
+        isMention = true;
+      }
+    }
+  }
+
+  return { content, isMention };
+}
+
 // =============================================================================
 // OpenClaw -> NapCat Adapters (Outbound)
 // =============================================================================
 
 /**
+ * Convert a single OpenClaw content item to NapCat format
+ */
+function openClawSegmentToNapCat(
+  content: OpenClawMessageContent
+): NapCatMessageSegment | null {
+  switch (content.type) {
+    case 'text':
+      return { type: 'text', data: { text: content.text } };
+
+    case 'at':
+      return { type: 'at', data: { qq: content.isAll ? 'all' : content.userId } };
+
+    case 'image':
+      return { type: 'image', data: { file: content.url, url: content.url } };
+
+    case 'reply':
+      return { type: 'reply', data: { id: content.messageId } };
+
+    case 'audio':
+    case 'location':
+      // These types are inbound-only for now
+      logWarn('adapters', `Unsupported outbound type: ${content.type}`);
+      return null;
+
+    default:
+      logWarn('adapters', `Unknown content type (outbound): ${(content as { type: string }).type}`);
+      return null;
+  }
+}
+
+/**
  * Convert OpenClaw message content to NapCat message segments
- * @param content - OpenClaw message content array
- * @param replyToId - Optional message ID to reply to
  */
 export function openClawToNapCatMessage(
   content: OpenClawMessageContent[],
@@ -594,12 +459,7 @@ export function openClawToNapCatMessage(
 
   // Add reply segment at the start if replyToId is provided
   if (replyToId) {
-    segments.push({
-      type: 'reply',
-      data: {
-        id: replyToId,
-      },
-    });
+    segments.push({ type: 'reply', data: { id: replyToId } });
   }
 
   for (const item of content) {
@@ -612,75 +472,92 @@ export function openClawToNapCatMessage(
   return segments;
 }
 
+// =============================================================================
+// Text Extraction Utilities
+// =============================================================================
+
 /**
- * Convert a single OpenClaw content item to NapCat format
+ * Extract plain text from message segments (for logging/debugging)
+ * Directly processes NapCat segments to preserve more info (like @name)
  */
-function openClawSegmentToNapCat(
-  content: OpenClawMessageContent
-): NapCatMessageSegment | null {
-  switch (content.type) {
-    case 'text':
-      return openClawTextToNapCat(content);
-
-    case 'at':
-      return openClawAtToNapCat(content);
-
-    case 'image':
-      return openClawImageToNapCat(content);
-
-    case 'reply':
-      return openClawReplyToNapCat(content);
-
-    default:
-      logWarn('adapters', `Unknown content type (outbound): ${(content as { type: string }).type}`);
-      return null;
-  }
+export function extractPlainTextFromSegments(segments: NapCatMessageSegment[]): string {
+  return segments
+    .map(seg => {
+      const data = seg.data as Record<string, unknown>;
+      switch (seg.type) {
+        case 'text':
+          return String(data.text || '');
+        case 'at':
+          return data.qq === 'all' ? '@全体成员' : `@${data.name || data.qq}`;
+        case 'image':
+          return '[图片]';
+        case 'reply':
+          return '[回复]';
+        case 'face':
+          return getEmojiForFaceId(String(data.id || ''));
+        case 'poke':
+          return '[戳一戳]';
+        case 'file':
+          return '[文件]';
+        case 'record':
+          return '[语音]';
+        case 'json':
+          return '[JSON消息]';
+        default:
+          return `[${seg.type}]`;
+      }
+    })
+    .join('');
 }
 
-function openClawTextToNapCat(content: OpenClawTextContent): NapCatTextSegment {
-  return {
-    type: 'text',
-    data: {
-      text: content.text,
-    },
-  };
+/**
+ * Check if a message contains only text (no special formatting)
+ */
+export function isPlainTextMessage(segments: NapCatMessageSegment[]): boolean {
+  return segments.length === 1 && segments[0].type === 'text';
 }
 
-function openClawAtToNapCat(content: OpenClawAtContent): NapCatAtSegment {
-  if (content.isAll) {
-    return {
-      type: 'at',
-      data: {
-        qq: 'all',
-      },
-    };
-  }
-
-  return {
-    type: 'at',
-    data: {
-      qq: content.userId,
-    },
-  };
+/**
+ * Get message summary for logging
+ */
+export function getMessageSummary(segments: NapCatMessageSegment[], maxLength = 50): string {
+  const text = extractPlainTextFromSegments(segments);
+  return text.length > maxLength ? text.slice(0, maxLength) + '...' : text;
 }
 
-function openClawImageToNapCat(content: OpenClawImageContent): NapCatImageSegment {
-  return {
-    type: 'image',
-    data: {
-      file: content.url,
-      url: content.url,
-    },
-  };
+// =============================================================================
+// Content Creation Helpers
+// =============================================================================
+
+/**
+ * Create a text message content
+ */
+export function createTextContent(text: string): { type: 'text'; text: string } {
+  return { type: 'text', text };
 }
 
-function openClawReplyToNapCat(content: OpenClawReplyContent): NapCatReplySegment {
-  return {
-    type: 'reply',
-    data: {
-      id: content.messageId,
-    },
-  };
+/**
+ * Create an at-mention message content
+ */
+export function createAtContent(
+  userId: string,
+  isAll = false
+): { type: 'at'; userId: string; isAll: boolean } {
+  return { type: 'at', userId, isAll };
+}
+
+/**
+ * Create an image message content
+ */
+export function createImageContent(url: string): { type: 'image'; url: string } {
+  return { type: 'image', url };
+}
+
+/**
+ * Create a reply message content
+ */
+export function createReplyContent(messageId: string): { type: 'reply'; messageId: string } {
+  return { type: 'reply', messageId };
 }
 
 // =============================================================================
@@ -706,195 +583,16 @@ export function parsePokeMessage(
   senderId: string,
   groupId?: string
 ): PokeMessage | null {
-  const poke = segments.find(s => s.type === 'poke') as NapCatPokeSegment | undefined;
-  if (!poke) {
-    return null;
-  }
+  const poke = segments.find(s => s.type === 'poke');
+  if (!poke || poke.type !== 'poke') return null;
 
+  const data = poke.data as Record<string, unknown>;
   return {
     type: 'poke',
     senderId,
-    targetId: poke.data.qq || 'unknown',
+    targetId: String(data.qq || 'unknown'),
     groupId,
   };
-}
-
-/**
- * Extract plain text from message segments (for logging/debugging)
- */
-export function extractPlainTextFromSegments(segments: NapCatMessageSegment[]): string {
-  const parts: string[] = [];
-
-  for (const segment of segments) {
-    switch (segment.type) {
-      case 'text':
-        if (isTextSegment(segment)) {
-          parts.push(segment.data.text);
-        }
-        break;
-      case 'at':
-        if (isAtSegment(segment)) {
-          const qq = segment.data.qq;
-          parts.push(qq === 'all' ? '@全体成员' : `@${segment.data.name || qq}`);
-        }
-        break;
-      case 'image':
-        // Include URL for debugging, so images can be accessed
-        if (isImageSegment(segment)) {
-          const url = segment.data.url || segment.data.file;
-          parts.push(url ? `[图片](${url})` : '[图片]');
-        } else {
-          parts.push('[图片]');
-        }
-        break;
-      case 'reply':
-        parts.push('[回复]');
-        break;
-      case 'face':
-        if (isFaceSegment(segment)) {
-          parts.push(getEmojiForFaceId(segment.data.id));
-        }
-        break;
-      case 'poke':
-        parts.push('[戳一戳]');
-        break;
-      case 'file':
-        if (isFileSegment(segment)) {
-          const fileName = segment.data.file || 'unknown';
-          const fileSize = segment.data.file_size;
-          const sizeText = fileSize ? ` (${formatFileSize(fileSize)})` : '';
-          parts.push(`[文件] ${fileName}${sizeText}`);
-        } else {
-          parts.push('[文件]');
-        }
-        break;
-      case 'record':
-        if (isRecordSegment(segment)) {
-          const path = segment.data.path;
-          const file = segment.data.file;
-          parts.push(path ? `[语音](${path})` : `[语音](${file})`);
-        } else {
-          parts.push('[语音]');
-        }
-        break;
-      case 'json':
-        if (isJsonSegment(segment)) {
-          try {
-            const jsonData: JsonMessageData = JSON.parse(segment.data.data);
-            if (jsonData.prompt) {
-              parts.push(jsonData.prompt);
-            } else {
-              parts.push('[JSON消息]');
-            }
-          } catch {
-            parts.push('[JSON消息]');
-          }
-        } else {
-          parts.push('[JSON消息]');
-        }
-        break;
-      default:
-        parts.push(`[${segment.type}]`);
-    }
-  }
-
-  return parts.join('');
-}
-
-/**
- * Check if a message contains only text (no special formatting)
- */
-export function isPlainTextMessage(segments: NapCatMessageSegment[]): boolean {
-  return segments.length === 1 && segments[0].type === 'text';
-}
-
-/**
- * Get message summary for logging
- */
-export function getMessageSummary(segments: NapCatMessageSegment[], maxLength = 50): string {
-  const text = extractPlainTextFromSegments(segments);
-  return text.length > maxLength ? text.slice(0, maxLength) + '...' : text;
-}
-
-// =============================================================================
-// Message Content Building Helpers
-// =============================================================================
-
-/**
- * Create a text message content
- */
-export function createTextContent(text: string): OpenClawTextContent {
-  return {
-    type: 'text',
-    text,
-  };
-}
-
-/**
- * Create an at-mention message content
- */
-export function createAtContent(userId: string, isAll = false): OpenClawAtContent {
-  return {
-    type: 'at',
-    userId,
-    isAll,
-  };
-}
-
-/**
- * Create an image message content
- */
-export function createImageContent(url: string): OpenClawImageContent {
-  return {
-    type: 'image',
-    url,
-  };
-}
-
-/**
- * Create a reply message content
- */
-export function createReplyContent(messageId: string): OpenClawReplyContent {
-  return {
-    type: 'reply',
-    messageId,
-  };
-}
-
-// =============================================================================
-// Emoji/Face Handling
-// =============================================================================
-
-/**
- * Try to convert emoji to QQ face, otherwise return as text
- */
-export function convertEmojiOrText(emoji: string): string | NapCatFaceSegment {
-  const faceId = getFaceIdForEmoji(emoji);
-  if (faceId) {
-    return {
-      type: 'face',
-      data: {
-        id: faceId,
-      },
-    };
-  }
-  return emoji;
-}
-
-/**
- * Check if content represents an @all mention
- */
-export function isAtAll(content: OpenClawAtContent): boolean {
-  return content.isAll === true || content.userId === 'all';
-}
-
-/**
- * Check if any content in an array contains @all
- */
-export function containsAtAll(contents: OpenClawMessageContent[]): boolean {
-  return contents.some(
-    c => c.type === 'at' && isAtAll(c as OpenClawAtContent)
-  );
 }
 
 // =============================================================================
@@ -913,14 +611,15 @@ export interface RecallResult {
 /**
  * Recall (delete) a message
  * Note: Messages can only be recalled within 2 minutes on QQ
- * @param messageId - The message ID to recall
- * @param connection - Connection to use for the request
- * @returns Recall result
  */
 export async function recallMessage(
   messageId: string | number,
   connection: {
-    sendRequest: <T>(action: string, params?: Record<string, unknown>) => Promise<{ status: string; msg?: string; data?: T }>;
+    sendRequest: (action: string, params?: Record<string, unknown>) => Promise<{
+      status: string;
+      msg?: string;
+      data?: unknown;
+    }>;
   }
 ): Promise<RecallResult> {
   try {
@@ -930,40 +629,35 @@ export async function recallMessage(
 
     if (response.status === 'ok') {
       return { success: true };
-    } else {
-      // Parse error message to determine the type of failure
-      const errorMsg = response.msg || 'Unknown error';
+    }
 
-      if (errorMsg.includes('timeout') || errorMsg.includes('超时')) {
-        return {
-          success: false,
-          error: 'Message recall timeout - message may be too old to recall',
-          code: 'RECALL_TIMEOUT',
-        };
-      }
+    const errorMsg = response.msg || 'Unknown error';
 
-      if (errorMsg.includes('permission') || errorMsg.includes('权限')) {
-        return {
-          success: false,
-          error: 'Permission denied - cannot recall this message',
-          code: 'PERMISSION_DENIED',
-        };
-      }
-
-      if (errorMsg.includes('not found') || errorMsg.includes('不存在')) {
-        return {
-          success: false,
-          error: 'Message not found or already recalled',
-          code: 'MESSAGE_NOT_FOUND',
-        };
-      }
-
+    if (errorMsg.includes('timeout') || errorMsg.includes('超时')) {
       return {
         success: false,
-        error: errorMsg,
-        code: 'RECALL_FAILED',
+        error: 'Message recall timeout - message may be too old to recall',
+        code: 'RECALL_TIMEOUT',
       };
     }
+
+    if (errorMsg.includes('permission') || errorMsg.includes('权限')) {
+      return {
+        success: false,
+        error: 'Permission denied - cannot recall this message',
+        code: 'PERMISSION_DENIED',
+      };
+    }
+
+    if (errorMsg.includes('not found') || errorMsg.includes('不存在')) {
+      return {
+        success: false,
+        error: 'Message not found or already recalled',
+        code: 'MESSAGE_NOT_FOUND',
+      };
+    }
+
+    return { success: false, error: errorMsg, code: 'RECALL_FAILED' };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
 
@@ -975,10 +669,6 @@ export async function recallMessage(
       };
     }
 
-    return {
-      success: false,
-      error: errorMessage,
-      code: 'RECALL_ERROR',
-    };
+    return { success: false, error: errorMessage, code: 'RECALL_ERROR' };
   }
 }
