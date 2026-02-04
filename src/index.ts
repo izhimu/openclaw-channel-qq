@@ -503,6 +503,7 @@ async function handleNapCatEvent(accountId: string, event: {
   post_type: string;
   message_type?: string;
   notice_type?: string;
+  sub_type?: string;
   time: number;
   self_id: number;
   message_id?: number;
@@ -514,6 +515,7 @@ async function handleNapCatEvent(accountId: string, event: {
     card?: string;
   };
   target_id?: number;
+  raw_info?: Array<{ type: string; txt?: string }>;
 }): Promise<void> {
   logDebug("events", `Received event: ${event.post_type}, message_type: ${event.message_type}`);
 
@@ -557,13 +559,20 @@ async function handleNapCatEvent(accountId: string, event: {
       break;
 
     case "notice":
-      // Notice events (like poke) are handled but don't trigger AI responses
-      if (event.notice_type === "poke" && event.target_id) {
-        await handlePokeEvent(accountId, {
-          user_id: event.user_id,
-          target_id: event.target_id,
-          group_id: event.group_id,
-        }, { account, cfg, log }, connectionManager);
+      // Handle poke events - both notice_type: "poke" and notice_type: "notify" + sub_type: "poke"
+      if (event.target_id) {
+        const isPokeEvent =
+          event.notice_type === "poke" ||
+          (event.notice_type === "notify" && event.sub_type === "poke");
+
+        if (isPokeEvent) {
+          await handlePokeEvent(accountId, {
+            user_id: event.user_id,
+            target_id: event.target_id,
+            group_id: event.group_id,
+            raw_info: event.raw_info,
+          }, { account, cfg, log }, connectionManager);
+        }
       }
       break;
 

@@ -25,6 +25,7 @@ function decodeHtmlEntities(value: string): string {
     .replace(/&amp;/g, '&')
     .replace(/&#91;/g, '[')
     .replace(/&#93;/g, ']')
+    .replace(/&#44;/g, ',')
     .replace(/&quot;/g, '"')
     .replace(/&apos;/g, "'")
     .replace(/&lt;/g, '<')
@@ -93,14 +94,16 @@ function parseCQParams(paramsStr: string): Record<string, string> {
 
 /**
  * Parse CQ codes like [CQ:image,file=xxx,url=xxx] into segments
+ * Handles nested JSON/XML data by counting brackets
  */
 function parseCQCode(text: string): NapCatMessageSegment[] {
   const segments: NapCatMessageSegment[] = [];
-  const cqRegex = /\[CQ:([a-zA-Z0-9_]+),([^\]]+)\]/g;
+  // Match [CQ:type,...] but handle nested brackets in params
+  const cqStartRegex = /\[CQ:([a-zA-Z0-9_]+),/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
-  while ((match = cqRegex.exec(text)) !== null) {
+  while ((match = cqStartRegex.exec(text)) !== null) {
     // Add text before this CQ code
     if (match.index > lastIndex) {
       const textBefore = text.slice(lastIndex, match.index);
@@ -109,8 +112,37 @@ function parseCQCode(text: string): NapCatMessageSegment[] {
       }
     }
 
-    segments.push({ type: match[1], data: parseCQParams(match[2]) });
-    lastIndex = cqRegex.lastIndex;
+    const type = match[1];
+    const paramsStart = match.index + match[0].length;
+
+    // Find the closing bracket, accounting for nested {} [] ()
+    let bracketDepth = 0;
+    let braceDepth = 0;
+    let parenDepth = 0;
+    let paramsEnd = paramsStart;
+
+    for (let i = paramsStart; i < text.length; i++) {
+      const char = text[i];
+      if (char === '{') braceDepth++;
+      else if (char === '}') braceDepth--;
+      else if (char === '[') bracketDepth++;
+      else if (char === ']') {
+        if (bracketDepth === 0 && braceDepth === 0 && parenDepth === 0) {
+          paramsEnd = i;
+          break;
+        }
+        bracketDepth--;
+      }
+      else if (char === '(') parenDepth++;
+      else if (char === ')') parenDepth--;
+    }
+
+    const paramsStr = text.slice(paramsStart, paramsEnd);
+    segments.push({ type, data: parseCQParams(paramsStr) });
+    lastIndex = paramsEnd + 1;
+
+    // Reset regex to continue from new position
+    cqStartRegex.lastIndex = lastIndex;
   }
 
   // Add remaining text after last CQ code

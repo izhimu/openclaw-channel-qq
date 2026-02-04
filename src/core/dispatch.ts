@@ -323,6 +323,17 @@ export async function handlePrivateMessage(
 }
 
 /**
+ * Extract action text from raw_info (e.g., "戳了戳")
+ */
+function extractPokeActionText(rawInfo?: Array<{ type: string; txt?: string }>): string {
+  if (!rawInfo) return '戳了戳';
+
+  // Find the "nor" type item with txt field
+  const actionItem = rawInfo.find(item => item.type === 'nor' && item.txt);
+  return actionItem?.txt || '戳了戳';
+}
+
+/**
  * Handle poke event
  */
 export async function handlePokeEvent(
@@ -331,6 +342,7 @@ export async function handlePokeEvent(
     user_id: number;
     target_id: number;
     group_id?: number;
+    raw_info?: Array<{ type: string; txt?: string }>;
   },
   ctx: {
     account: AccountConfig;
@@ -352,6 +364,28 @@ export async function handlePokeEvent(
   const botUserId = conn.getBotUserId();
   if (botUserId && event.target_id !== botUserId) return;
 
-  ctx.log?.info(`[openclaw-channel-qq:${accountId}] Poke from ${event.user_id}`);
-  // Poke events don't trigger AI responses, just log them
+  const actionText = extractPokeActionText(event.raw_info);
+  ctx.log?.info(`[openclaw-channel-qq:${accountId}] Poke from ${event.user_id}: ${actionText}`);
+
+  // Optionally dispatch as a message to trigger AI response
+  const { cfg, log } = ctx;
+
+  // Convert poke to a text message for AI processing
+  const pokeMessage = actionText || '戳了戳';
+  const chatType = event.group_id ? 'group' : 'direct';
+  const chatId = String(event.group_id || event.user_id);
+
+  await dispatchMessage({
+    accountId,
+    cfg,
+    log,
+    chatType,
+    chatId,
+    senderId: String(event.user_id),
+    senderName: String(event.user_id),
+    messageId: `poke_${event.user_id}_${Date.now()}`,
+    content: pokeMessage,
+    timestamp: Date.now(),
+    conn,
+  });
 }

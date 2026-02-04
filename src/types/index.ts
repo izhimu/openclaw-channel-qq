@@ -161,6 +161,28 @@ export interface NapCatPokeEvent extends NapCatNoticeEvent {
   sender_id: number;
 }
 
+// Raw info item in notify events
+export interface NapCatRawInfoItem {
+  type: string;
+  col?: string;
+  nm?: string;
+  uid?: string;
+  jp?: string;
+  src?: string;
+  txt?: string;
+  tp?: string;
+}
+
+export interface NapCatNotifyEvent extends NapCatNoticeEvent {
+  notice_type: 'notify';
+  sub_type: 'poke' | 'lucky_king' | 'honor' | string;
+  user_id: number;
+  target_id: number;
+  group_id?: number;
+  sender_id: number;
+  raw_info?: NapCatRawInfoItem[];
+}
+
 // Request Events
 export interface NapCatRequestEvent extends NapCatEvent {
   post_type: 'request';

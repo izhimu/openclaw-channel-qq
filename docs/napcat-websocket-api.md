@@ -600,7 +600,73 @@ NapCat 使用消息段（Message Segment）数组来表示复杂的消息内容�
 }
 ```
 
-### 1.4 获取合并转发消息
+### 1.4 获取消息
+
+根据消息 ID 获取消息详细信息。
+
+**Action**: `get_msg`
+
+**请求参数**：
+
+| 参数名 | 类型 | 必填 | 说明 |
+|--------|------|------|------|
+| message_id | number/string | 是 | 消息 ID |
+
+**请求示例**：
+
+```json
+{
+    "action": "get_msg",
+    "params": {
+        "message_id": 123456
+    }
+}
+```
+
+**响应示例**：
+
+```json
+{
+    "status": "ok",
+    "retcode": 0,
+    "data": {
+        "time": 1710000000,
+        "message_type": "group",
+        "message_id": 123456,
+        "real_id": 123456,
+        "message_seq": 123456,
+        "sender": {
+            "user_id": 123456789,
+            "nickname": "昵称"
+        },
+        "message": "hello",
+        "raw_message": "hello",
+        "font": 14,
+        "group_id": 123456,
+        "user_id": 123456789,
+        "emoji_likes_list": []
+    },
+    "message": "",
+    "wording": ""
+}
+```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| time | number | 发送时间 |
+| message_type | string | 消息类型 |
+| message_id | number | 消息 ID |
+| real_id | number | 真实 ID |
+| message_seq | number | 消息序号 |
+| sender | object | 发送者信息 |
+| message | string/array | 消息内容 |
+| raw_message | string | 原始消息内容 |
+| font | number | 字体 |
+| group_id | number/string | 群号（群消息时返回） |
+| user_id | number/string | 发送者 QQ 号 |
+| emoji_likes_list | array | 表情回应列表 |
+
+### 1.5 获取合并转发消息
 
 获取合并转发消息的具体内容。
 
