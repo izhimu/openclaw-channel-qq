@@ -6,7 +6,7 @@
 import type { AccountConfig, OpenClawMessageContent } from '../types/index.js';
 import type { ConnectionManager } from './connection.js';
 import { napCatToOpenClawMessageAsync, type NapCatConnection } from '../adapters/message.js';
-import { logWarn } from '../utils/index.js';
+import { logWarn, sendTypingIndicator, sendStoppedTyping } from '../utils/index.js';
 
 /**
  * Format text for multi-line quote block by prefixing each line with ">"
@@ -116,6 +116,15 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
   const isGroup = chatType === 'group';
   const peerId = isGroup ? `group:${chatId}` : senderId;
 
+  // Send typing indicator for private messages only (API requires user_id)
+  let typingIndicatorSent = false;
+  if (!isGroup) {
+    await sendTypingIndicator(conn, senderId).catch(() => {
+      // Silently ignore errors - typing indicator is optional
+    });
+    typingIndicatorSent = true;
+  }
+
   // Resolve agent route
   const route = pluginRuntime.channel.routing.resolveAgentRoute({
     cfg: cfg as any,
@@ -222,6 +231,13 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
     log?.info(`[openclaw-channel-qq:${accountId}] Dispatch completed, hasResponse: ${hasResponse}`);
   } catch (error) {
     log?.error(`[openclaw-channel-qq:${accountId}] Message processing failed: ${error}`);
+  } finally {
+    // Send stopped typing indicator after AI completes (for private messages)
+    if (typingIndicatorSent) {
+      await sendStoppedTyping(conn, senderId).catch(() => {
+        // Silently ignore errors
+      });
+    }
   }
 }
 

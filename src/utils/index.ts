@@ -389,3 +389,13 @@ export function getCloseCodeMessage(code: number): string {
 // =============================================================================
 
 export { CQCodeUtils, CQNode } from './cqcode.js';
+
+// =============================================================================
+// Typing Status Utilities
+// =============================================================================
+
+export {
+  sendTypingStatus,
+  sendTypingIndicator,
+  sendStoppedTyping,
+} from './typing.js';

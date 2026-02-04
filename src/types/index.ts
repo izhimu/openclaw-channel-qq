@@ -28,7 +28,8 @@ export interface NapCatResponse<T = unknown> {
 export type NapCatAction =
   | 'send_msg'
   | 'get_msg'
-  | 'get_status';
+  | 'get_status'
+  | 'set_input_status';
 
 // =============================================================================
 // NapCat Event Types
@@ -463,4 +464,36 @@ export interface GetMsgResponse {
   wording: string;
   echo?: string;
   stream?: string;
+}
+
+// =============================================================================
+// set_input_status API Types
+// =============================================================================
+
+/**
+ * Event types for set_input_status API
+ * 1 = typing, 2 = stopped typing
+ */
+export type InputStatusEventType = 1 | 2;
+
+/**
+ * Parameters for set_input_status API request
+ */
+export interface SetInputStatusParams {
+  /** QQ user ID (as string, per NapCat API spec) */
+  user_id: string;
+  /** Event type: 1 = typing, 2 = stopped typing */
+  event_type: InputStatusEventType;
+}
+
+/**
+ * Response from set_input_status API
+ */
+export interface SetInputStatusResponse {
+  status: 'ok' | 'failed';
+  retcode: number;
+  data: Record<string, never>;
+  msg: string;
+  wording: string;
+  echo?: string;
 }
