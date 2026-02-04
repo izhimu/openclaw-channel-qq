@@ -181,12 +181,22 @@ function normalizeMessageSegments(message: NapCatMessageSegment[] | string): Nap
 
 interface JsonMessageData {
   prompt?: string;
+  app?: string;
+  desc?: string;
+  view?: string;
+  meta?: Record<string, unknown>;
+  config?: Record<string, unknown>;
 }
 
 function parseJsonSegment(segment: NapCatJsonSegment): OpenClawJsonContent | OpenClawMessageContent | null {
   try {
     // Trim whitespace and newlines from the raw data
     let rawData = segment.data.data.trim();
+
+    // The data string may still contain HTML entities within the JSON content
+    // (e.g., &#44; for commas that are part of the JSON structure)
+    // Decode them to get valid JSON
+    rawData = decodeHtmlEntities(rawData);
 
     // Try to parse JSON for additional metadata
     let jsonData: JsonMessageData | undefined;

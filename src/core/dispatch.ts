@@ -27,7 +27,7 @@ async function contentToPlainText(
     const { parseReplyMessage } = await import('../adapters/message.js');
     const result = await parseReplyMessage(rawMessage, connection);
     if (result.isReply && result.data) {
-      quotedMessageText = `[回复]\n\n## 引用消息\n\n${result.data.quotedSenderNickname}: ${result.data.quotedMessage}\n\n## 回复消息\n\n${result.data.replyText}`;
+      quotedMessageText = `[回复]\n\n> ${result.data.quotedSenderNickname}: ${result.data.quotedMessage}\n\n${result.data.replyText}`;
     }
   }
 
