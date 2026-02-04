@@ -9,6 +9,7 @@ import {
   messageIdToString,
   logDebug,
   logWarn,
+  logError,
 } from "./utils/index.js";
 import { MultiConnectionManager } from "./core/connection.js";
 import { openClawToNapCatMessage } from "./adapters/message.js";
@@ -216,7 +217,11 @@ export const qqNapCatPlugin: ChannelPlugin<AccountConfig> = {
     },
     sendMedia: async (ctx: ChannelOutboundContext): Promise<OutboundDeliveryResult> => {
       const { to, mediaUrl, accountId, cfg, replyToId } = ctx;
+
+      logDebug("outbound", `sendMedia called - accountId: ${accountId}, to: ${to}, mediaUrl: ${mediaUrl ?? "null"}, replyToId: ${replyToId ?? "none"}`);
+
       if (!accountId) {
+        logWarn("outbound", "sendMedia failed: accountId is required");
         return {
           channel: "openclaw-channel-qq",
           messageId: "",
@@ -224,16 +229,33 @@ export const qqNapCatPlugin: ChannelPlugin<AccountConfig> = {
           deliveredAt: Date.now(),
         };
       }
-      if (!mediaUrl) {
+
+      // Validate mediaUrl - check for null, undefined, empty string, or invalid URL
+      if (mediaUrl === null || mediaUrl === undefined || mediaUrl === "") {
+        logWarn("outbound", `sendMedia failed: mediaUrl is invalid (value: ${String(mediaUrl)})`);
         return {
           channel: "openclaw-channel-qq",
           messageId: "",
-          error: new Error("mediaUrl is required"),
+          error: new Error(`mediaUrl is required but received: ${mediaUrl === null ? "null" : mediaUrl === undefined ? "undefined" : "empty string"}`),
           deliveredAt: Date.now(),
         };
       }
+
+      // Check if mediaUrl looks like a valid URL or file path
+      const trimmedUrl = String(mediaUrl).trim();
+      if (trimmedUrl === "" || trimmedUrl.length < 3) {
+        logWarn("outbound", `sendMedia failed: mediaUrl is too short or empty after trim`);
+        return {
+          channel: "openclaw-channel-qq",
+          messageId: "",
+          error: new Error(`mediaUrl appears to be invalid: "${trimmedUrl}"`),
+          deliveredAt: Date.now(),
+        };
+      }
+
       const account = resolveQQNapCatAccount(cfg, accountId);
       if (!account) {
+        logWarn("outbound", `sendMedia failed: Account not found: ${accountId}`);
         return {
           channel: "openclaw-channel-qq",
           messageId: "",
@@ -244,6 +266,7 @@ export const qqNapCatPlugin: ChannelPlugin<AccountConfig> = {
 
       const conn = connectionManager?.getConnection(accountId);
       if (!conn || !conn.isConnected()) {
+        logWarn("outbound", `sendMedia failed: Not connected for account: ${accountId}`);
         return {
           channel: "openclaw-channel-qq",
           messageId: "",
@@ -259,9 +282,19 @@ export const qqNapCatPlugin: ChannelPlugin<AccountConfig> = {
       const chatType = type === "group" ? "group" : "direct";
       const chatId = id || to;
 
+      logDebug("outbound", `Sending media to ${chatType}:${chatId}, url: ${trimmedUrl.substring(0, 100)}${trimmedUrl.length > 100 ? "..." : ""}`);
+
       try {
-        // Build media segment - assume image type from mediaUrl
-        const mediaSegment = { type: "image", data: { file: mediaUrl, url: mediaUrl } };
+        // Build media segment - NapCat requires 'file' field
+        // file can be: URL, file path, or base64
+        const mediaSegment = {
+          type: "image",
+          data: {
+            file: trimmedUrl,
+            url: trimmedUrl,
+            summary: "[图片]",
+          },
+        };
 
         // Build message segments with optional reply
         const messageSegments: Array<{ type: string; data: Record<string, unknown> }> = [];
@@ -269,6 +302,8 @@ export const qqNapCatPlugin: ChannelPlugin<AccountConfig> = {
           messageSegments.push({ type: "reply", data: { id: replyToId } });
         }
         messageSegments.push(mediaSegment);
+
+        logDebug("outbound", `Message segments: ${JSON.stringify(messageSegments)}`);
 
         let response;
         if (chatType === "direct") {
@@ -283,6 +318,8 @@ export const qqNapCatPlugin: ChannelPlugin<AccountConfig> = {
           });
         }
 
+        logDebug("outbound", `NapCat response - status: ${response.status}, retcode: ${response.retcode}, msg: ${response.msg ?? "none"}, data: ${JSON.stringify(response.data)}`);
+
         // Update lastOutboundAt timestamp on successful send
         if (response.status === "ok") {
           const gatewayCtx = gatewayContexts.get(accountId);
@@ -296,25 +333,29 @@ export const qqNapCatPlugin: ChannelPlugin<AccountConfig> = {
 
         if (response.status === "ok" && response.data) {
           const data = response.data as { message_id: number };
+          logDebug("outbound", `Media sent successfully, message_id: ${data.message_id}`);
           return {
             channel: "openclaw-channel-qq",
             messageId: messageIdToString(data.message_id),
             deliveredAt: Date.now(),
           };
         } else {
+          const errorMsg = response.msg || "Send media failed";
+          logWarn("outbound", `sendMedia failed - status: ${response.status}, retcode: ${response.retcode}, msg: ${errorMsg}`);
           return {
             channel: "openclaw-channel-qq",
             messageId: "",
-            error: new Error(response.msg || "Send media failed"),
+            error: new Error(`NapCat error [${response.retcode ?? "unknown"}]: ${errorMsg}`),
             deliveredAt: Date.now(),
           };
         }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
+        logError("outbound", `sendMedia exception: ${errorMessage}`);
         return {
           channel: "openclaw-channel-qq",
           messageId: "",
-          error: new Error(errorMessage),
+          error: new Error(`sendMedia error: ${errorMessage}`),
           deliveredAt: Date.now(),
         };
       }
