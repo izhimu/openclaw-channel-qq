@@ -14,6 +14,11 @@ import {
   createImageContent,
   createReplyContent,
   recallMessage,
+  hasReplySegment,
+  extractReplyMessageId,
+  extractTextExcludingReply,
+  parseReplyMessage,
+  formatReplyAsMarkdown,
   type RecallResult,
 } from '../message.js';
 import type {
@@ -396,5 +401,181 @@ describe('recallMessage', () => {
 
     const result = await recallMessage(12345, mockConnection);
     expect(result.success).toBe(true);
+  });
+});
+
+describe('hasReplySegment', () => {
+  it('should return true when reply segment is present', () => {
+    const segments: NapCatMessageSegment[] = [
+      { type: 'reply', data: { id: '12345' } },
+      { type: 'text', data: { text: 'Hello' } },
+    ];
+
+    expect(hasReplySegment(segments)).toBe(true);
+  });
+
+  it('should return false when no reply segment is present', () => {
+    const segments: NapCatMessageSegment[] = [
+      { type: 'text', data: { text: 'Hello' } },
+    ];
+
+    expect(hasReplySegment(segments)).toBe(false);
+  });
+});
+
+describe('extractReplyMessageId', () => {
+  it('should extract reply message ID', () => {
+    const segments: NapCatMessageSegment[] = [
+      { type: 'reply', data: { id: '12345' } },
+      { type: 'text', data: { text: 'Hello' } },
+    ];
+
+    expect(extractReplyMessageId(segments)).toBe('12345');
+  });
+
+  it('should return null when no reply segment exists', () => {
+    const segments: NapCatMessageSegment[] = [
+      { type: 'text', data: { text: 'Hello' } },
+    ];
+
+    expect(extractReplyMessageId(segments)).toBeNull();
+  });
+});
+
+describe('extractTextExcludingReply', () => {
+  it('should extract text excluding reply segment', () => {
+    const segments: NapCatMessageSegment[] = [
+      { type: 'reply', data: { id: '12345' } },
+      { type: 'text', data: { text: 'Hello' } },
+      { type: 'text', data: { text: ' world' } },
+    ];
+
+    expect(extractTextExcludingReply(segments)).toBe('Hello world');
+  });
+
+  it('should return empty string when only reply segment exists', () => {
+    const segments: NapCatMessageSegment[] = [
+      { type: 'reply', data: { id: '12345' } },
+    ];
+
+    expect(extractTextExcludingReply(segments)).toBe('');
+  });
+
+  it('should handle at segments in text extraction', () => {
+    const segments: NapCatMessageSegment[] = [
+      { type: 'reply', data: { id: '12345' } },
+      { type: 'at', data: { qq: '123456', name: 'User' } },
+      { type: 'text', data: { text: ' hello' } },
+    ];
+
+    expect(extractTextExcludingReply(segments)).toBe('@User hello');
+  });
+});
+
+describe('parseReplyMessage', () => {
+  it('should return isReply false for non-reply messages', async () => {
+    const segments: NapCatMessageSegment[] = [
+      { type: 'text', data: { text: 'Hello' } },
+    ];
+
+    const result = await parseReplyMessage(segments);
+
+    expect(result.isReply).toBe(false);
+    expect(result.data).toBeUndefined();
+  });
+
+  it('should parse reply message without connection', async () => {
+    const segments: NapCatMessageSegment[] = [
+      { type: 'reply', data: { id: '872893135' } },
+      { type: 'text', data: { text: '111' } },
+    ];
+
+    const result = await parseReplyMessage(segments);
+
+    expect(result.isReply).toBe(true);
+    expect(result.data).toBeDefined();
+    expect(result.data?.replyMessageId).toBe('872893135');
+    expect(result.data?.replyText).toBe('111');
+    expect(result.data?.quotedSenderNickname).toBe('未知');
+    expect(result.data?.quotedMessage).toBe('[无法获取引用消息内容]');
+  });
+
+  it('should parse reply message with connection and fetch quoted message', async () => {
+    const segments: NapCatMessageSegment[] = [
+      { type: 'reply', data: { id: '872893135' } },
+      { type: 'text', data: { text: '111' } },
+    ];
+
+    const mockConnection = {
+      sendRequest: async () => ({
+        status: 'ok',
+        data: {
+          sender: { nickname: '小玉', user_id: 2439176326 },
+          raw_message: '这是被引用的消息',
+          message: '这是被引用的消息',
+          message_type: 'private',
+        } as any,
+        retcode: 0,
+      }),
+    };
+
+    const result = await parseReplyMessage(segments, mockConnection);
+
+    expect(result.isReply).toBe(true);
+    expect(result.data).toBeDefined();
+    expect(result.data?.replyMessageId).toBe('872893135');
+    expect(result.data?.replyText).toBe('111');
+    expect(result.data?.quotedSenderNickname).toBe('小玉');
+    expect(result.data?.quotedMessage).toBe('这是被引用的消息');
+  });
+
+  it('should handle string message format', async () => {
+    const message = '[CQ:reply,id=872893135]111';
+
+    const result = await parseReplyMessage(message);
+
+    expect(result.isReply).toBe(true);
+    expect(result.data?.replyMessageId).toBe('872893135');
+    expect(result.data?.replyText).toBe('111');
+  });
+});
+
+describe('formatReplyAsMarkdown', () => {
+  it('should format reply message as markdown', () => {
+    const data = {
+      replyMessageId: '872893135',
+      quotedSenderNickname: '小玉',
+      quotedMessage: '这是被引用的消息',
+      replyText: '111',
+    };
+
+    const result = formatReplyAsMarkdown(data);
+
+    expect(result).toBe(`[回复]
+
+## 引用消息
+
+小玉: 这是被引用的消息
+
+## 回复消息
+
+111`);
+  });
+
+  it('should handle multiline quoted message', () => {
+    const data = {
+      replyMessageId: '872893135',
+      quotedSenderNickname: '小玉',
+      quotedMessage: '第一行\n第二行\n第三行',
+      replyText: '回复内容',
+    };
+
+    const result = formatReplyAsMarkdown(data);
+
+    expect(result).toContain('小玉: 第一行');
+    expect(result).toContain('第二行');
+    expect(result).toContain('第三行');
+    expect(result).toContain('回复消息');
+    expect(result).toContain('回复内容');
   });
 });

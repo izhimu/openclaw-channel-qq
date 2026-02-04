@@ -671,3 +671,76 @@ export interface HeartbeatEvent extends NapCatMetaEvent {
   status: HeartbeatStatus;
   interval: number;
 }
+
+// =============================================================================
+// get_msg API Response Types
+// =============================================================================
+
+/**
+ * Sender information in get_msg response
+ */
+export interface GetMsgSender {
+  user_id: number;
+  nickname: string;
+  card?: string;
+}
+
+/**
+ * Data returned by get_msg API
+ */
+export interface GetMsgData {
+  self_id: number;
+  user_id: number;
+  time: number;
+  message_id: number;
+  message_seq: number;
+  real_id: number;
+  real_seq: string;
+  message_type: 'private' | 'group';
+  sender: GetMsgSender;
+  raw_message: string;
+  font: number;
+  sub_type?: string;
+  message: string | NapCatMessageSegment[];
+  message_format: string;
+  post_type: string;
+  group_id?: number;
+  emoji_likes_list?: unknown[];
+}
+
+/**
+ * Full response from get_msg API
+ */
+export interface GetMsgResponse {
+  status: 'ok' | 'failed';
+  retcode: number;
+  data: GetMsgData;
+  message: string;
+  wording: string;
+  echo?: string;
+  stream?: string;
+}
+
+/**
+ * Parsed reply message information
+ */
+export interface ReplyMessageData {
+  /** ID of the quoted message */
+  replyMessageId: string;
+  /** Nickname of the quoted message sender */
+  quotedSenderNickname: string;
+  /** Content of the quoted message */
+  quotedMessage: string;
+  /** Content of the reply text (after [CQ:reply]) */
+  replyText: string;
+}
+
+/**
+ * Result of parsing a reply message
+ */
+export interface ReplyMessageParseResult {
+  /** True if this is a reply message */
+  isReply: boolean;
+  /** Parsed reply data (if isReply is true) */
+  data?: ReplyMessageData;
+}

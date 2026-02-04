@@ -10,6 +10,10 @@ import type {
   NapCatJsonSegment,
   OpenClawMessageContent,
   OpenClawJsonContent,
+  GetMsgData,
+  GetMsgResponse,
+  ReplyMessageData,
+  ReplyMessageParseResult,
 } from '../types/index.js';
 import { logWarn, extractImageUrl, getEmojiForFaceId } from '../utils/index.js';
 
@@ -687,4 +691,236 @@ export async function recallMessage(
 
     return { success: false, error: errorMessage, code: 'RECALL_ERROR' };
   }
+}
+
+// =============================================================================
+// Reply Message Parsing
+// =============================================================================
+
+/**
+ * Check if segments contain a reply segment
+ */
+export function hasReplySegment(segments: NapCatMessageSegment[]): boolean {
+  return segments.some(s => s.type === 'reply');
+}
+
+/**
+ * Extract reply message ID from segments
+ */
+export function extractReplyMessageId(segments: NapCatMessageSegment[]): string | null {
+  for (const segment of segments) {
+    if (segment.type === 'reply') {
+      const data = segment.data as Record<string, unknown>;
+      return String(data.id || '');
+    }
+  }
+  return null;
+}
+
+/**
+ * Extract text content from segments (excluding reply segments)
+ */
+export function extractTextExcludingReply(segments: NapCatMessageSegment[]): string {
+  return segments
+    .filter(s => s.type !== 'reply')
+    .map(seg => {
+      const data = seg.data as Record<string, unknown>;
+      switch (seg.type) {
+        case 'text':
+          return String(data.text || '');
+        case 'at':
+          return data.qq === 'all' ? '@全体成员' : `@${data.name || data.qq}`;
+        case 'image':
+          return '[图片]';
+        case 'face':
+          return getEmojiForFaceId(String(data.id || ''));
+        case 'record':
+          return '[语音]';
+        case 'json':
+          return '[JSON]';
+        default:
+          return `[${seg.type}]`;
+      }
+    })
+    .join('');
+}
+
+/**
+ * Parse reply segments to get reply message ID and reply text
+ */
+export function parseReplySegments(segments: NapCatMessageSegment[]): {
+  replyMessageId: string | null;
+  replyText: string;
+} {
+  let replyMessageId: string | null = null;
+  const textParts: string[] = [];
+
+  for (const segment of segments) {
+    if (segment.type === 'reply') {
+      const data = segment.data as Record<string, unknown>;
+      replyMessageId = String(data.id || '');
+    } else {
+      const data = segment.data as Record<string, unknown>;
+      switch (segment.type) {
+        case 'text':
+          textParts.push(String(data.text || ''));
+          break;
+        case 'at':
+          textParts.push(data.qq === 'all' ? '@全体成员' : `@${data.name || data.qq}`);
+          break;
+        case 'image':
+          textParts.push('[图片]');
+          break;
+        case 'face':
+          textParts.push(getEmojiForFaceId(String(data.id || '')));
+          break;
+        default:
+          break;
+      }
+    }
+  }
+
+  return {
+    replyMessageId,
+    replyText: textParts.join(''),
+  };
+}
+
+/**
+ * Fetch quoted message using get_msg API
+ */
+async function fetchQuotedMessage(
+  messageId: string,
+  connection?: NapCatConnection
+): Promise<GetMsgData | null> {
+  if (!connection) return null;
+
+  try {
+    const response = await connection.sendRequest<GetMsgData>('get_msg', {
+      message_id: Number(messageId),
+    });
+
+    if (response.status === 'ok' && response.data) {
+      return response.data;
+    }
+  } catch (error) {
+    logWarn('adapters', `Failed to fetch quoted message ${messageId}: ${error}`);
+  }
+
+  return null;
+}
+
+/**
+ * Parse reply message and fetch quoted message content
+ *
+ * @param segments - Message segments (can be string or array)
+ * @param connection - Optional NapCat connection for fetching quoted message
+ * @returns ReplyMessageParseResult with parsed data
+ */
+export async function parseReplyMessage(
+  segments: NapCatMessageSegment[] | string,
+  connection?: NapCatConnection
+): Promise<ReplyMessageParseResult> {
+  const normalizedSegments = normalizeMessageSegments(segments);
+
+  // Check if this is a reply message
+  if (!hasReplySegment(normalizedSegments)) {
+    return { isReply: false };
+  }
+
+  // Extract reply message ID and reply text
+  const { replyMessageId, replyText } = parseReplySegments(normalizedSegments);
+
+  if (!replyMessageId) {
+    return { isReply: false };
+  }
+
+  // Fetch the quoted message
+  const quotedMessage = await fetchQuotedMessage(replyMessageId, connection);
+
+  if (!quotedMessage) {
+    // If we can't fetch the quoted message, still return what we have
+    return {
+      isReply: true,
+      data: {
+        replyMessageId,
+        quotedSenderNickname: '未知',
+        quotedMessage: '[无法获取引用消息内容]',
+        replyText,
+      },
+    };
+  }
+
+  // Extract quoted message content
+  let quotedContent = '';
+  if (typeof quotedMessage.message === 'string') {
+    quotedContent = quotedMessage.message;
+  } else if (Array.isArray(quotedMessage.message)) {
+    quotedContent = extractPlainTextFromSegments(quotedMessage.message);
+  } else {
+    quotedContent = quotedMessage.raw_message || '';
+  }
+
+  return {
+    isReply: true,
+    data: {
+      replyMessageId,
+      quotedSenderNickname: quotedMessage.sender?.nickname || '未知',
+      quotedMessage: quotedContent,
+      replyText,
+    },
+  };
+}
+
+/**
+ * Format reply message as markdown
+ *
+ * Output format:
+ * ```markdown
+ * [回复]
+ *
+ * ## 引用消息
+ *
+ * ${sender.nickname}: ${message}
+ *
+ * ## 回复消息
+ *
+ * ${replyText}
+ * ```
+ *
+ * @param data - ReplyMessageData to format
+ * @returns Formatted markdown string
+ */
+export function formatReplyAsMarkdown(data: ReplyMessageData): string {
+  const { quotedSenderNickname, quotedMessage, replyText } = data;
+
+  return `[回复]
+
+## 引用消息
+
+${quotedSenderNickname}: ${quotedMessage}
+
+## 回复消息
+
+${replyText}`;
+}
+
+/**
+ * Parse and format reply message in one step
+ *
+ * @param segments - Message segments (can be string or array)
+ * @param connection - Optional NapCat connection for fetching quoted message
+ * @returns Formatted markdown string or null if not a reply message
+ */
+export async function parseAndFormatReply(
+  segments: NapCatMessageSegment[] | string,
+  connection?: NapCatConnection
+): Promise<string | null> {
+  const result = await parseReplyMessage(segments, connection);
+
+  if (!result.isReply || !result.data) {
+    return null;
+  }
+
+  return formatReplyAsMarkdown(result.data);
 }
