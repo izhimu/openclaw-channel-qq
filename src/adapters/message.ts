@@ -16,207 +16,28 @@ import type {
   ReplyMessageParseResult,
 } from '../types/index.js';
 import { logWarn, extractImageUrl, getEmojiForFaceId } from '../utils/index.js';
+import { CQCodeUtils, type CQNode } from '../utils/cqcode.js';
 
 // =============================================================================
 // CQ Code Parsing
 // =============================================================================
 
 /**
- * Decode HTML entities in CQ code parameter values
+ * Convert CQNode to NapCatMessageSegment
  */
-function decodeHtmlEntities(value: string): string {
-  return value
-    .replace(/&amp;/g, '&')
-    .replace(/&#91;/g, '[')
-    .replace(/&#93;/g, ']')
-    .replace(/&#44;/g, ',')
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>');
+function cqNodeToNapCatSegment(node: CQNode): NapCatMessageSegment {
+  return {
+    type: node.type,
+    data: node.data,
+  } as NapCatMessageSegment;
 }
 
 /**
- * Parse CQ code parameters string into key-value pairs
- * Handles nested JSON objects/arrays that contain commas
- *
- * IMPORTANT: Do NOT decode HTML entities before parsing, because:
- * 1. JSON values like data=&quot;{...}&quot; start with &quot; not {
- * 2. We need to detect the opening { or [ inside the encoded string
- * 3. Decode only after extracting the complete value
- */
-function parseCQParams(paramsStr: string): Record<string, string> {
-  const data: Record<string, string> = {};
-
-  let pos = 0;
-
-  while (pos < paramsStr.length) {
-    // Skip leading commas
-    if (paramsStr[pos] === ',') {
-      pos++;
-      continue;
-    }
-
-    // Match key (alphanumeric + underscore)
-    const keyMatch = paramsStr.slice(pos).match(/^(\w+)=/);
-    if (!keyMatch) break;
-
-    const key = decodeHtmlEntities(keyMatch[1]);
-    pos += keyMatch[0].length;
-
-    // Extract value based on what follows
-    let value = '';
-    let valueEnd = pos;
-
-    if (paramsStr[pos] === '{') {
-      // JSON object value - find matching closing brace
-      let depth = 1;
-      let i = pos + 1;
-      while (i < paramsStr.length && depth > 0) {
-        if (paramsStr[i] === '{') depth++;
-        if (paramsStr[i] === '}') depth--;
-        i++;
-      }
-      value = paramsStr.slice(pos, i);
-      valueEnd = i;
-    } else if (paramsStr[pos] === '[') {
-      // JSON array value - find matching closing bracket
-      let depth = 1;
-      let i = pos + 1;
-      while (i < paramsStr.length && depth > 0) {
-        if (paramsStr[i] === '[') depth++;
-        if (paramsStr[i] === ']') depth--;
-        i++;
-      }
-      value = paramsStr.slice(pos, i);
-      valueEnd = i;
-    } else if (paramsStr.startsWith('&quot;{', pos)) {
-      // HTML-encoded JSON object: &quot;{...}&quot;
-      // Find the matching closing brace for the {
-      let braceDepth = 1;
-      let i = pos + 7; // Skip &quot;{
-      while (i < paramsStr.length && braceDepth > 0) {
-        if (paramsStr[i] === '{') braceDepth++;
-        if (paramsStr[i] === '}') braceDepth--;
-        i++;
-      }
-      // Now find the closing &quot;
-      const closingQuote = paramsStr.indexOf('&quot;', i);
-      if (closingQuote !== -1) {
-        value = paramsStr.slice(pos + 6, closingQuote); // Extract content between &quot;
-        valueEnd = closingQuote + 6;
-      } else {
-        // No closing quote, take until end
-        value = paramsStr.slice(pos + 6, i);
-        valueEnd = i;
-      }
-    } else if (paramsStr.startsWith('&quot;[', pos)) {
-      // HTML-encoded JSON array: &quot;[...]&quot;
-      let bracketDepth = 1;
-      let i = pos + 7; // Skip &quot;[
-      while (i < paramsStr.length && bracketDepth > 0) {
-        if (paramsStr[i] === '[') bracketDepth++;
-        if (paramsStr[i] === ']') bracketDepth--;
-        i++;
-      }
-      const closingQuote = paramsStr.indexOf('&quot;', i);
-      if (closingQuote !== -1) {
-        value = paramsStr.slice(pos + 6, closingQuote);
-        valueEnd = closingQuote + 6;
-      } else {
-        value = paramsStr.slice(pos + 6, i);
-        valueEnd = i;
-      }
-    } else if (paramsStr.startsWith('&quot;', pos)) {
-      // HTML-encoded string value: &quot;...&quot;
-      const closingQuote = paramsStr.indexOf('&quot;', pos + 6);
-      if (closingQuote !== -1) {
-        value = paramsStr.slice(pos + 6, closingQuote);
-        valueEnd = closingQuote + 6;
-      } else {
-        // No closing quote, read until next comma or end
-        const nextComma = paramsStr.indexOf(',', pos);
-        value = paramsStr.slice(pos + 6, nextComma === -1 ? paramsStr.length : nextComma);
-        valueEnd = nextComma === -1 ? paramsStr.length : nextComma;
-      }
-    } else {
-      // Simple value - read until next comma or end
-      const nextComma = paramsStr.indexOf(',', pos);
-      value = nextComma === -1 ? paramsStr.slice(pos) : paramsStr.slice(pos, nextComma);
-      valueEnd = nextComma === -1 ? paramsStr.length : nextComma;
-    }
-
-    // Decode HTML entities in the value (if not already decoded above)
-    data[key] = decodeHtmlEntities(value);
-    pos = valueEnd;
-  }
-
-  return data;
-}
-
-/**
- * Parse CQ codes like [CQ:image,file=xxx,url=xxx] into segments
- * Handles nested JSON/XML data by counting brackets
+ * Parse CQ codes using CQCodeUtils and convert to NapCatMessageSegment[]
  */
 function parseCQCode(text: string): NapCatMessageSegment[] {
-  const segments: NapCatMessageSegment[] = [];
-  // Match [CQ:type,...] but handle nested brackets in params
-  const cqStartRegex = /\[CQ:([a-zA-Z0-9_]+),/g;
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
-
-  while ((match = cqStartRegex.exec(text)) !== null) {
-    // Add text before this CQ code
-    if (match.index > lastIndex) {
-      const textBefore = text.slice(lastIndex, match.index);
-      if (textBefore) {
-        segments.push({ type: 'text', data: { text: textBefore } });
-      }
-    }
-
-    const type = match[1];
-    const paramsStart = match.index + match[0].length;
-
-    // Find the closing bracket, accounting for nested {} [] ()
-    let bracketDepth = 0;
-    let braceDepth = 0;
-    let parenDepth = 0;
-    let paramsEnd = paramsStart;
-
-    for (let i = paramsStart; i < text.length; i++) {
-      const char = text[i];
-      if (char === '{') braceDepth++;
-      else if (char === '}') braceDepth--;
-      else if (char === '[') bracketDepth++;
-      else if (char === ']') {
-        if (bracketDepth === 0 && braceDepth === 0 && parenDepth === 0) {
-          paramsEnd = i;
-          break;
-        }
-        bracketDepth--;
-      }
-      else if (char === '(') parenDepth++;
-      else if (char === ')') parenDepth--;
-    }
-
-    const paramsStr = text.slice(paramsStart, paramsEnd);
-    segments.push({ type, data: parseCQParams(paramsStr) });
-    lastIndex = paramsEnd + 1;
-
-    // Reset regex to continue from new position
-    cqStartRegex.lastIndex = lastIndex;
-  }
-
-  // Add remaining text after last CQ code
-  if (lastIndex < text.length) {
-    const textAfter = text.slice(lastIndex);
-    if (textAfter) {
-      segments.push({ type: 'text', data: { text: textAfter } });
-    }
-  }
-
-  // If no CQ codes found, return the whole text as a single segment
-  return segments.length > 0 ? segments : [{ type: 'text', data: { text } }];
+  const nodes = CQCodeUtils.parse(text);
+  return nodes.map(cqNodeToNapCatSegment);
 }
 
 /**

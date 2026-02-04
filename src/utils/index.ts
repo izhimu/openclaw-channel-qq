@@ -411,3 +411,9 @@ export function getCloseCodeMessage(code: number): string {
   };
   return messages[code] ?? `Unknown close code: ${code}`;
 }
+
+// =============================================================================
+// CQ Code Utilities
+// =============================================================================
+
+export { CQCodeUtils, CQNode } from './cqcode.js';
