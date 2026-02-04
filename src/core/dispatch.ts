@@ -9,6 +9,14 @@ import { napCatToOpenClawMessageAsync, type NapCatConnection } from '../adapters
 import { logWarn } from '../utils/index.js';
 
 /**
+ * Format text for multi-line quote block by prefixing each line with ">"
+ */
+function formatQuoteBlock(text: string): string {
+  if (!text) return '';
+  return text.split('\n').map(line => `> ${line}`).join('\n');
+}
+
+/**
  * Convert OpenClaw message content array to plain text
  * For images, includes the URL so AI models can access them
  * For replies, includes quoted message content if available
@@ -27,7 +35,9 @@ async function contentToPlainText(
     const { parseReplyMessage } = await import('../adapters/message.js');
     const result = await parseReplyMessage(rawMessage, connection);
     if (result.isReply && result.data) {
-      quotedMessageText = `[回复]\n\n> ${result.data.quotedSenderNickname}: ${result.data.quotedMessage}\n\n${result.data.replyText}`;
+      const quotedSender = formatQuoteBlock(result.data.quotedSenderNickname);
+      const quotedContent = formatQuoteBlock(result.data.quotedMessage);
+      quotedMessageText = `[回复]\n\n${quotedSender}: ${quotedContent}\n\n${result.data.replyText}`;
     }
   }
 
