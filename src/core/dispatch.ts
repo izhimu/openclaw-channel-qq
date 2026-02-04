@@ -10,6 +10,7 @@ import { logDebug, logWarn } from '../utils/index.js';
 
 /**
  * Convert OpenClaw message content array to plain text
+ * For images, includes the URL so AI models can access them
  */
 function contentToPlainText(content: OpenClawMessageContent[]): string {
   return content.map((c) => {
@@ -19,7 +20,8 @@ function contentToPlainText(content: OpenClawMessageContent[]): string {
       case 'at':
         return c.isAll ? '@全体成员' : `@${c.userId}`;
       case 'image':
-        return '[图片]';
+        // Include image URL so AI models can access the image
+        return c.url ? `[图片](${c.url})` : '[图片]';
       case 'reply':
         return '[回复]';
       default:

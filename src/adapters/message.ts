@@ -23,11 +23,82 @@ import { logWarn, extractImageUrl, getEmojiForFaceId, getFaceIdForEmoji } from '
 // =============================================================================
 
 /**
+ * CQ Code Parser
+ * Parses CQ codes like [CQ:image,file=xxx,url=xxx] into segments
+ */
+function parseCQCode(text: string): NapCatMessageSegment[] {
+  const segments: NapCatMessageSegment[] = [];
+
+  // CQ code regex: [CQ:type,key=value,key2=value2,...]
+  const cqRegex = /\[CQ:([a-zA-Z0-9_]+),([^\]]+)\]/g;
+
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = cqRegex.exec(text)) !== null) {
+    // Add text before this CQ code
+    if (match.index > lastIndex) {
+      const textBefore = text.slice(lastIndex, match.index);
+      if (textBefore) {
+        segments.push({ type: 'text', data: { text: textBefore } });
+      }
+    }
+
+    const type = match[1];
+    const paramsStr = match[2];
+
+    // Parse key=value pairs
+    const data: Record<string, string> = {};
+    const paramRegex = /(\w+)=([^,]+)/g;
+    let paramMatch: RegExpExecArray | null;
+
+    while ((paramMatch = paramRegex.exec(paramsStr)) !== null) {
+      // Decode HTML entities in values (e.g., &amp; -> &)
+      const key = paramMatch[1];
+      let value = paramMatch[2];
+
+      // Decode HTML entities
+      value = value
+        .replace(/&amp;/g, '&')
+        .replace(/&#91;/g, '[')
+        .replace(/&#93;/g, ']')
+        .replace(/&quot;/g, '"')
+        .replace(/&apos;/g, "'")
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>');
+
+      data[key] = value;
+    }
+
+    // Create segment based on type
+    segments.push({ type, data });
+
+    lastIndex = cqRegex.lastIndex;
+  }
+
+  // Add remaining text after last CQ code
+  if (lastIndex < text.length) {
+    const textAfter = text.slice(lastIndex);
+    if (textAfter) {
+      segments.push({ type: 'text', data: { text: textAfter } });
+    }
+  }
+
+  // If no CQ codes found, return the whole text as a single segment
+  if (segments.length === 0) {
+    return [{ type: 'text', data: { text } }];
+  }
+
+  return segments;
+}
+
+/**
  * Normalize message to segments array (handles string or array format)
  */
 function normalizeMessageSegments(message: NapCatMessageSegment[] | string): NapCatMessageSegment[] {
   if (typeof message === 'string') {
-    return [{ type: 'text', data: { text: message } }];
+    // Try to parse as CQ code string
+    return parseCQCode(message);
   }
   if (!Array.isArray(message)) {
     logWarn('adapters', `Invalid message format: ${typeof message}`);
@@ -380,7 +451,13 @@ export function extractPlainTextFromSegments(segments: NapCatMessageSegment[]): 
         }
         break;
       case 'image':
-        parts.push('[图片]');
+        // Include URL for debugging, so images can be accessed
+        if (isImageSegment(segment)) {
+          const url = segment.data.url || segment.data.file;
+          parts.push(url ? `[图片](${url})` : '[图片]');
+        } else {
+          parts.push('[图片]');
+        }
         break;
       case 'reply':
         parts.push('[回复]');
