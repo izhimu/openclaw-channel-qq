@@ -185,7 +185,8 @@ interface JsonMessageData {
 
 function parseJsonSegment(segment: NapCatJsonSegment): OpenClawJsonContent | OpenClawMessageContent | null {
   try {
-    const rawData = segment.data.data;
+    // Trim whitespace and newlines from the raw data
+    let rawData = segment.data.data.trim();
 
     // Try to parse JSON for additional metadata
     let jsonData: JsonMessageData | undefined;
@@ -195,12 +196,18 @@ function parseJsonSegment(segment: NapCatJsonSegment): OpenClawJsonContent | Ope
       // JSON parse failed, just use raw data
     }
 
-    // Return JsonContent with raw data and optional prompt
-    return {
+    // Build result object - only include prompt if it exists and is non-empty
+    const result: OpenClawJsonContent = {
       type: 'json',
       data: rawData,
-      prompt: jsonData?.prompt,
     };
+
+    // Only add prompt if it's a non-empty string
+    if (jsonData?.prompt && typeof jsonData.prompt === 'string' && jsonData.prompt.trim() !== '') {
+      result.prompt = jsonData.prompt;
+    }
+
+    return result;
   } catch (error) {
     logWarn('adapters', `Failed to parse JSON message: ${error}`);
     return null;
