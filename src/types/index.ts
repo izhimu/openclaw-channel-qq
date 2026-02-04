@@ -437,18 +437,12 @@ export interface OpenClawAudioContent {
   fileSize?: number;
 }
 
-export interface OpenClawLocationContent {
-  type: 'location';
-  /** Display text/prompt */
-  text: string;
-  /** Address */
-  address?: string;
-  /** Name of the location */
-  name?: string;
-  /** Latitude */
-  lat?: string;
-  /** Longitude */
-  lng?: string;
+export interface OpenClawJsonContent {
+  type: 'json';
+  /** Raw JSON data string */
+  data: string;
+  /** Optional display text/prompt from the JSON */
+  prompt?: string;
 }
 
 export type OpenClawMessageContent =
@@ -457,7 +451,7 @@ export type OpenClawMessageContent =
   | OpenClawImageContent
   | OpenClawReplyContent
   | OpenClawAudioContent
-  | OpenClawLocationContent;
+  | OpenClawJsonContent;
 
 // =============================================================================
 // Send Message Parameters

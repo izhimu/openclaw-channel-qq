@@ -9,7 +9,7 @@ import type {
   NapCatFileSegment,
   NapCatJsonSegment,
   OpenClawMessageContent,
-  OpenClawLocationContent,
+  OpenClawJsonContent,
 } from '../types/index.js';
 import { logWarn, extractImageUrl, getEmojiForFaceId } from '../utils/index.js';
 
@@ -172,46 +172,31 @@ function normalizeMessageSegments(message: NapCatMessageSegment[] | string): Nap
 }
 
 // =============================================================================
-// JSON Message Parsing (for location shares, etc.)
+// JSON Message Parsing
 // =============================================================================
 
 interface JsonMessageData {
-  app?: string;
   prompt?: string;
-  meta?: {
-    'Location.Search'?: {
-      address?: string;
-      lat?: string;
-      lng?: string;
-      name?: string;
-    };
-  };
 }
 
-function parseJsonSegment(segment: NapCatJsonSegment): OpenClawLocationContent | OpenClawMessageContent | null {
+function parseJsonSegment(segment: NapCatJsonSegment): OpenClawJsonContent | OpenClawMessageContent | null {
   try {
-    const jsonData: JsonMessageData = JSON.parse(segment.data.data);
+    const rawData = segment.data.data;
 
-    // Handle location share messages (com.tencent.map)
-    if (jsonData.app === 'com.tencent.map' && jsonData.meta?.['Location.Search']) {
-      const location = jsonData.meta['Location.Search'];
-      return {
-        type: 'location',
-        text: jsonData.prompt || '[位置]',
-        address: location.address,
-        name: location.name,
-        lat: location.lat,
-        lng: location.lng,
-      };
+    // Try to parse JSON for additional metadata
+    let jsonData: JsonMessageData | undefined;
+    try {
+      jsonData = JSON.parse(rawData);
+    } catch {
+      // JSON parse failed, just use raw data
     }
 
-    // For other JSON types, use the prompt if available
-    if (jsonData.prompt) {
-      return { type: 'text', text: jsonData.prompt };
-    }
-
-    logWarn('adapters', `Unknown JSON message type: ${jsonData.app || 'unknown'}`);
-    return null;
+    // Return JsonContent with raw data and optional prompt
+    return {
+      type: 'json',
+      data: rawData,
+      prompt: jsonData?.prompt,
+    };
   } catch (error) {
     logWarn('adapters', `Failed to parse JSON message: ${error}`);
     return null;
@@ -469,7 +454,6 @@ function openClawSegmentToNapCat(
       return { type: 'reply', data: { id: content.messageId } };
 
     case 'audio':
-    case 'location':
       // These types are inbound-only for now
       logWarn('adapters', `Unsupported outbound type: ${content.type}`);
       return null;
@@ -534,7 +518,7 @@ export function extractPlainTextFromSegments(segments: NapCatMessageSegment[]): 
         case 'record':
           return '[语音]';
         case 'json':
-          return '[JSON消息]';
+          return '[JSON]';
         default:
           return `[${seg.type}]`;
       }

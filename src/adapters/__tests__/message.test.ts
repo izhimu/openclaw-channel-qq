@@ -113,6 +113,42 @@ describe('napCatToOpenClawMessage', () => {
     expect(result.content).toHaveLength(1);
     expect(result.content[0]).toEqual({ type: 'text', text: 'Hello world' });
   });
+
+  it('should convert json segments', () => {
+    const jsonData = '{"app":"com.tencent.map","prompt":"[位置]测试地点"}';
+    const segments: NapCatMessageSegment[] = [
+      { type: 'json', data: { data: jsonData } },
+    ];
+
+    const result = napCatToOpenClawMessage(segments);
+
+    expect(result.content).toHaveLength(1);
+    const jsonContent = result.content[0];
+    if (jsonContent.type === 'json') {
+      expect(jsonContent.data).toBe(jsonData);
+      expect(jsonContent.prompt).toBe('[位置]测试地点');
+    } else {
+      throw new Error('Expected json content type');
+    }
+  });
+
+  it('should handle json segments with unparseable data', () => {
+    const invalidJson = '{invalid json';
+    const segments: NapCatMessageSegment[] = [
+      { type: 'json', data: { data: invalidJson } },
+    ];
+
+    const result = napCatToOpenClawMessage(segments);
+
+    expect(result.content).toHaveLength(1);
+    const jsonContent = result.content[0];
+    if (jsonContent.type === 'json') {
+      expect(jsonContent.data).toBe(invalidJson);
+      expect(jsonContent.prompt).toBeUndefined();
+    } else {
+      throw new Error('Expected json content type');
+    }
+  });
 });
 
 describe('openClawToNapCatMessage', () => {

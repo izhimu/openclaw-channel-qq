@@ -32,9 +32,10 @@ function contentToPlainText(content: OpenClawMessageContent[]): string {
         const label = '[语音]';
         return c.url ? `${label}(${c.url})` : label;
       }
-      case 'location': {
-        // Location messages - include address info
-        return c.text || '[位置]';
+      case 'json': {
+        // JSON messages - format as markdown code block
+        const header = c.prompt || '[JSON]';
+        return `${header}\n\`\`\`json\n${c.data}\n\`\`\``;
       }
       default:
         return '';
