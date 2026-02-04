@@ -8,22 +8,7 @@ import { z } from "zod";
 /**
  * Zod schema for channels.openclaw-channel-qq.* configuration
  */
-export const QqNapCatConfigSchema = z.object({
-  /** Account name (optional display name) */
-  name: z.string().optional(),
-
-  /** Whether this channel is enabled */
-  enabled: z.boolean().optional(),
-
-  /** NapCat WebSocket URL (e.g., ws://localhost:3001) */
-  wsUrl: z.string().optional(),
-
-  /** Access token for NapCat API (optional) */
-  accessToken: z.string().optional(),
-
-  /** Bot user ID (QQ number) for mention detection */
-  botUserId: z.number().optional(),
-});
+export const QqNapCatConfigSchema = z.object();
 
 export type QqNapCatConfig = z.infer<typeof QqNapCatConfigSchema>;
 
