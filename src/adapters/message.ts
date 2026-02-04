@@ -39,13 +39,14 @@ function decodeHtmlEntities(value: string): string {
 /**
  * Parse CQ code parameters string into key-value pairs
  * Handles nested JSON objects/arrays that contain commas
+ *
+ * IMPORTANT: Do NOT decode HTML entities before parsing, because:
+ * 1. JSON values like data=&quot;{...}&quot; start with &quot; not {
+ * 2. We need to detect the opening { or [ inside the encoded string
+ * 3. Decode only after extracting the complete value
  */
 function parseCQParams(paramsStr: string): Record<string, string> {
   const data: Record<string, string> = {};
-
-  // Decode HTML entities first, before parsing keys
-  // This handles cases where parameter names are encoded (e.g., "&#100;ata=")
-  paramsStr = decodeHtmlEntities(paramsStr);
 
   let pos = 0;
 
@@ -60,11 +61,12 @@ function parseCQParams(paramsStr: string): Record<string, string> {
     const keyMatch = paramsStr.slice(pos).match(/^(\w+)=/);
     if (!keyMatch) break;
 
-    const key = keyMatch[1];
+    const key = decodeHtmlEntities(keyMatch[1]);
     pos += keyMatch[0].length;
 
     // Extract value based on what follows
     let value = '';
+    let valueEnd = pos;
 
     if (paramsStr[pos] === '{') {
       // JSON object value - find matching closing brace
@@ -76,7 +78,7 @@ function parseCQParams(paramsStr: string): Record<string, string> {
         i++;
       }
       value = paramsStr.slice(pos, i);
-      pos = i;
+      valueEnd = i;
     } else if (paramsStr[pos] === '[') {
       // JSON array value - find matching closing bracket
       let depth = 1;
@@ -87,15 +89,66 @@ function parseCQParams(paramsStr: string): Record<string, string> {
         i++;
       }
       value = paramsStr.slice(pos, i);
-      pos = i;
+      valueEnd = i;
+    } else if (paramsStr.startsWith('&quot;{', pos)) {
+      // HTML-encoded JSON object: &quot;{...}&quot;
+      // Find the matching closing brace for the {
+      let braceDepth = 1;
+      let i = pos + 7; // Skip &quot;{
+      while (i < paramsStr.length && braceDepth > 0) {
+        if (paramsStr[i] === '{') braceDepth++;
+        if (paramsStr[i] === '}') braceDepth--;
+        i++;
+      }
+      // Now find the closing &quot;
+      const closingQuote = paramsStr.indexOf('&quot;', i);
+      if (closingQuote !== -1) {
+        value = paramsStr.slice(pos + 6, closingQuote); // Extract content between &quot;
+        valueEnd = closingQuote + 6;
+      } else {
+        // No closing quote, take until end
+        value = paramsStr.slice(pos + 6, i);
+        valueEnd = i;
+      }
+    } else if (paramsStr.startsWith('&quot;[', pos)) {
+      // HTML-encoded JSON array: &quot;[...]&quot;
+      let bracketDepth = 1;
+      let i = pos + 7; // Skip &quot;[
+      while (i < paramsStr.length && bracketDepth > 0) {
+        if (paramsStr[i] === '[') bracketDepth++;
+        if (paramsStr[i] === ']') bracketDepth--;
+        i++;
+      }
+      const closingQuote = paramsStr.indexOf('&quot;', i);
+      if (closingQuote !== -1) {
+        value = paramsStr.slice(pos + 6, closingQuote);
+        valueEnd = closingQuote + 6;
+      } else {
+        value = paramsStr.slice(pos + 6, i);
+        valueEnd = i;
+      }
+    } else if (paramsStr.startsWith('&quot;', pos)) {
+      // HTML-encoded string value: &quot;...&quot;
+      const closingQuote = paramsStr.indexOf('&quot;', pos + 6);
+      if (closingQuote !== -1) {
+        value = paramsStr.slice(pos + 6, closingQuote);
+        valueEnd = closingQuote + 6;
+      } else {
+        // No closing quote, read until next comma or end
+        const nextComma = paramsStr.indexOf(',', pos);
+        value = paramsStr.slice(pos + 6, nextComma === -1 ? paramsStr.length : nextComma);
+        valueEnd = nextComma === -1 ? paramsStr.length : nextComma;
+      }
     } else {
       // Simple value - read until next comma or end
       const nextComma = paramsStr.indexOf(',', pos);
       value = nextComma === -1 ? paramsStr.slice(pos) : paramsStr.slice(pos, nextComma);
-      pos = nextComma === -1 ? paramsStr.length : nextComma;
+      valueEnd = nextComma === -1 ? paramsStr.length : nextComma;
     }
 
-    data[key] = value;
+    // Decode HTML entities in the value (if not already decoded above)
+    data[key] = decodeHtmlEntities(value);
+    pos = valueEnd;
   }
 
   return data;
@@ -196,12 +249,8 @@ interface JsonMessageData {
 function parseJsonSegment(segment: NapCatJsonSegment): OpenClawJsonContent | OpenClawMessageContent | null {
   try {
     // Trim whitespace and newlines from the raw data
-    let rawData = segment.data.data.trim();
-
-    // The data string may still contain HTML entities within the JSON content
-    // (e.g., &#44; for commas that are part of the JSON structure)
-    // Decode them to get valid JSON
-    rawData = decodeHtmlEntities(rawData);
+    // HTML entities are already decoded in parseCQParams, so rawData is valid JSON
+    const rawData = segment.data.data.trim();
 
     // Try to parse JSON for additional metadata
     let jsonData: JsonMessageData | undefined;
