@@ -919,6 +919,50 @@ NapCat 使用消息段（Message Segment）数组来表示复杂的消息内容�
 | good | boolean | 状态是否良好 |
 | stat | string | 状态信息 |
 
+### 4.2 设置输入状态
+
+向对方发送正在输入状态。
+
+**Action**: `set_input_status`
+
+**请求参数**：
+
+| 参数名 | 类型 | 必填 | 说明 |
+|--------|------|------|------|
+| user_id | string | 是 | QQ 号 |
+| event_type | number | 是 | 事件类型 |
+
+**event_type 取值**：
+
+| 值 | 说明 |
+|----|------|
+| 1 | 正在输入 |
+| 2 | 停止输入 |
+
+**请求示例**：
+
+```json
+{
+    "action": "set_input_status",
+    "params": {
+        "user_id": "123456789",
+        "event_type": 1
+    }
+}
+```
+
+**响应示例**：
+
+```json
+{
+    "status": "ok",
+    "retcode": 0,
+    "data": {},
+    "message": "",
+    "wording": ""
+}
+```
+
 ---
 
 ## 通用错误码
