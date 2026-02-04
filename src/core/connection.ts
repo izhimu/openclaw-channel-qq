@@ -27,8 +27,8 @@ import {
   getCloseCodeMessage,
 } from '../utils/index.js';
 
-const META_EVENT_HEARTBEAT_INTERVAL = 30000; // NapCat sends heartbeat every 30s
-const HEARTBEAT_TIMEOUT = 60000; // 60 seconds - consider connection dead if no heartbeat
+const HEARTBEAT_INTERVAL = 30000; // 30 seconds - send active ping
+const HEARTBEAT_TIMEOUT = 10000; // 10 seconds - consider connection dead if no response
 const MAX_RECONNECT_ATTEMPTS = 10;
 const REQUEST_TIMEOUT = 30000; // 30 seconds
 
@@ -42,7 +42,8 @@ export class ConnectionManager extends EventEmitter {
   private state: ConnectionState = 'disconnected';
   private botUserId?: number;
 
-  // Heartbeat - OneBot 11 meta_event based
+  // Heartbeat - active ping + OneBot 11 meta_event based
+  private heartbeatTimer?: NodeJS.Timeout;
   private heartbeatTimeoutTimer?: NodeJS.Timeout;
   private lastHeartbeatTime = 0;
 
@@ -179,7 +180,7 @@ export class ConnectionManager extends EventEmitter {
     this.connectedAt = Date.now();
     this.totalReconnectAttempts += this.reconnectAttempts;
     this.reconnectAttempts = 0;
-    this.startHeartbeatTimeout();
+    this.startHeartbeat();
     this.emit('connected');
   }
 
@@ -218,6 +219,7 @@ export class ConnectionManager extends EventEmitter {
    */
   private handleMetaEvent(event: NapCatMetaEvent): void {
     if (event.meta_event_type === 'heartbeat') {
+      // NapCat sent us a heartbeat - update health status
       this.lastHeartbeatTime = Date.now();
       this.healthStatus = {
         healthy: true,
@@ -225,31 +227,12 @@ export class ConnectionManager extends EventEmitter {
         consecutiveFailures: 0,
       };
 
-      // Reset heartbeat timeout
-      this.startHeartbeatTimeout();
-
       logDebug('connection', `Received heartbeat for account ${this.accountId}`);
       this.emit('heartbeat', this.healthStatus);
     } else if (event.meta_event_type === 'lifecycle') {
       logInfo('connection', `Lifecycle event for account ${this.accountId}: ${event.sub_type}`);
       this.emit('lifecycle', event);
     }
-  }
-
-  /**
-   * Start heartbeat timeout timer
-   */
-  private startHeartbeatTimeout(): void {
-    this.clearHeartbeatTimers();
-
-    this.heartbeatTimeoutTimer = setTimeout(() => {
-      logWarn('connection', `Heartbeat timeout for account ${this.accountId}`);
-      this.healthStatus.healthy = false;
-      this.healthStatus.consecutiveFailures++;
-      this.emit('heartbeat-timeout');
-      // Force reconnect
-      this.ws?.terminate();
-    }, HEARTBEAT_TIMEOUT);
   }
 
   private handleError(error: Error): void {
@@ -321,10 +304,52 @@ export class ConnectionManager extends EventEmitter {
   }
 
   // ==========================================================================
-  // Heartbeat Logic (OneBot 11 meta_event based)
+  // Heartbeat Logic (active ping + OneBot 11 meta_event based)
   // ==========================================================================
 
+  private startHeartbeat(): void {
+    this.clearHeartbeatTimers();
+    this.lastHeartbeatTime = Date.now();
+
+    this.heartbeatTimer = setInterval(() => {
+      this.sendHeartbeat();
+    }, HEARTBEAT_INTERVAL);
+
+    logDebug('connection', `Started heartbeat for account ${this.accountId}`);
+  }
+
+  private sendHeartbeat(): void {
+    if (!this.isConnected()) {
+      this.clearHeartbeatTimers();
+      return;
+    }
+
+    try {
+      // Send a minimal ping message
+      this.ws?.send(JSON.stringify({ ping: Date.now() }));
+
+      // Set timeout to detect if we don't receive a response
+      this.heartbeatTimeoutTimer = setTimeout(() => {
+        logWarn('connection', `Heartbeat timeout for account ${this.accountId}`);
+        this.healthStatus.healthy = false;
+        this.healthStatus.consecutiveFailures++;
+        this.emit('heartbeat-timeout');
+        // Force close and reconnect - use terminate() instead of close() for abnormal closure
+        this.ws?.terminate();
+      }, HEARTBEAT_TIMEOUT);
+
+      logDebug('connection', `Sent heartbeat for account ${this.accountId}`);
+
+    } catch (error) {
+      logError('connection', `Failed to send heartbeat:`, error);
+    }
+  }
+
   private clearHeartbeatTimers(): void {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = undefined;
+    }
     if (this.heartbeatTimeoutTimer) {
       clearTimeout(this.heartbeatTimeoutTimer);
       this.heartbeatTimeoutTimer = undefined;
