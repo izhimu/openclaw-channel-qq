@@ -26,33 +26,9 @@ export interface NapCatResponse<T = unknown> {
 // =============================================================================
 
 export type NapCatAction =
-  | 'send_private_msg'
-  | 'send_group_msg'
-  | 'delete_msg'
+  | 'send_msg'
   | 'get_msg'
-  | 'get_login_info'
-  | 'get_friend_list'
-  | 'get_group_list'
-  | 'get_group_member_info'
-  | 'get_group_member_list'
-  | 'set_essence_msg'
-  | 'delete_essence_msg'
-  | 'set_group_add_request'
-  | 'set_group_card'
-  | 'set_group_name'
-  | 'set_group_admin'
-  | 'set_group_kick'
-  | 'set_group_ban'
-  | 'set_group_whole_ban'
-  | 'set_group_anonymous'
-  | 'set_group_anonymous_ban'
-  | 'send_group_sign'
-  | 'delete_friend'
-  | 'get_group_honor_info'
-  | 'get_essence_msg_list'
-  | 'check_url_safely'
-  | 'get_word_slices'
-  | '.handle_quick_operation';
+  | 'get_status';
 
 // =============================================================================
 // NapCat Event Types
@@ -72,64 +48,6 @@ export type NapCatPostType =
   | 'notice'
   | 'request'
   | 'meta_event';
-
-// Message Events
-export interface NapCatMessageEvent extends NapCatEvent {
-  post_type: 'message';
-  message_type: 'private' | 'group';
-  sub_type?: string;
-  message_id: number;
-  user_id: number;
-  message: NapCatMessageSegment[];
-  raw_message: string;
-  font?: number;
-  sender: NapCatSender;
-  to_me?: boolean;
-  group_id?: number;
-}
-
-export interface NapCatMessageSentEvent {
-  time: number;
-  self_id: number;
-  post_type: 'message_sent_type';
-  message_type: 'group';
-  sub_type: 'normal';
-  message_id: number;
-  group_id: number;
-  user_id: number;
-  message: NapCatMessageSegment[];
-  raw_message: string;
-  font?: number;
-  sender: {
-    user_id: number;
-    nickname: string;
-    card: string;
-    sex: string;
-    age: number;
-    area: string;
-    level: string;
-    role: string;
-    title: string;
-  };
-}
-
-export interface NapCatPrivateMessageSentEvent {
-  time: number;
-  self_id: number;
-  post_type: 'message_private_sent_type';
-  message_type: 'private';
-  sub_type: 'friend' | 'group' | 'other';
-  message_id: number;
-  user_id: number;
-  message: NapCatMessageSegment[];
-  raw_message: string;
-  font?: number;
-  sender: {
-    user_id: number;
-    nickname: string;
-  };
-  target_id?: number;
-}
 
 // Notice Events
 export interface NapCatNoticeEvent extends NapCatEvent {
@@ -183,12 +101,6 @@ export interface NapCatNotifyEvent extends NapCatNoticeEvent {
   raw_info?: NapCatRawInfoItem[];
 }
 
-// Request Events
-export interface NapCatRequestEvent extends NapCatEvent {
-  post_type: 'request';
-  request_type: 'friend' | 'group' | 'event';
-}
-
 // Meta Events
 export interface NapCatMetaEvent extends NapCatEvent {
   post_type: 'meta_event';
@@ -208,17 +120,9 @@ export type NapCatMessageSegment =
   | NapCatFaceSegment
   | NapCatPokeSegment
   | NapCatRecordSegment
-  | NapCatVideoSegment
   | NapCatFileSegment
-  | NapCatXmlSegment
   | NapCatJsonSegment
-  | NapCardImageSegment
   | NapCatUnknownSegment;
-
-export interface NapCatSegmentBase {
-  type: string;
-  data: Record<string, unknown>;
-}
 
 export interface NapCatTextSegment {
   type: 'text';
@@ -278,14 +182,6 @@ export interface NapCatRecordSegment {
   };
 }
 
-export interface NapCatVideoSegment {
-  type: 'video';
-  data: {
-    file: string;
-    url?: string;
-  };
-}
-
 export interface NapCatFileSegment {
   type: 'file';
   data: {
@@ -296,25 +192,10 @@ export interface NapCatFileSegment {
   };
 }
 
-export interface NapCatXmlSegment {
-  type: 'xml';
-  data: {
-    data: string;
-  };
-}
-
 export interface NapCatJsonSegment {
   type: 'json';
   data: {
     data: string;
-  };
-}
-
-export interface NapCardImageSegment {
-  type: 'cardimage';
-  data: {
-    file?: string;
-    url?: string;
   };
 }
 
@@ -373,15 +254,6 @@ export interface ConnectionStatus {
   lastAttempted?: number;
   error?: string;
   reconnectAttempts?: number;
-}
-
-// =============================================================================
-// WebSocket Message Types
-// =============================================================================
-
-export interface WebSocketMessage {
-  type: 'request' | 'response' | 'event';
-  data: NapCatRequest | NapCatResponse | NapCatEvent;
 }
 
 // =============================================================================
@@ -454,31 +326,8 @@ export type OpenClawMessageContent =
   | OpenClawJsonContent;
 
 // =============================================================================
-// Send Message Parameters
-// =============================================================================
-
-export interface SendPrivateMsgParams {
-  user_id: number;
-  message: NapCatMessageSegment[];
-}
-
-export interface SendGroupMsgParams {
-  group_id: number;
-  message: NapCatMessageSegment[];
-}
-
-// =============================================================================
 // API Response Types
 // =============================================================================
-
-export interface SendMsgResponse {
-  message_id: number;
-}
-
-export interface LoginInfo {
-  user_id: number;
-  nickname: string;
-}
 
 // =============================================================================
 // Utility Types
@@ -560,117 +409,12 @@ export interface HealthStatus {
 }
 
 // =============================================================================
-// Security Adapter Types
-// =============================================================================
-
-/**
- * DM policy for a peer
- */
-export interface DmPolicy {
-  /** Whether DMs are allowed */
-  allow: boolean;
-  /** Reason if DMs are not allowed */
-  reason?: string;
-}
-
-/**
- * Security warning
- */
-export interface SecurityWarning {
-  /** Warning code */
-  code: string;
-  /** Warning message */
-  message: string;
-  /** Severity level */
-  severity: 'low' | 'medium' | 'high';
-}
-
-/**
- * Security context for warnings
- */
-export interface SecurityContext {
-  accountId: string;
-  chatType: 'direct' | 'group';
-  chatId: string;
-  senderId?: string;
-}
-
-// =============================================================================
 // Directory Adapter Types
 // =============================================================================
-
-/**
- * Peer (friend) information
- */
-export interface PeerInfo {
-  /** User ID */
-  id: string;
-  /** Display name */
-  name: string;
-  /** Optional nickname */
-  nickname?: string;
-  /** Avatar URL */
-  avatarUrl?: string;
-}
-
-/**
- * Group information
- */
-export interface GroupInfo {
-  /** Group ID */
-  id: string;
-  /** Group name */
-  name: string;
-  /** Member count */
-  memberCount?: number;
-  /** Maximum members */
-  maxMembers?: number;
-  /** Group owner ID */
-  ownerId?: string;
-}
-
-/**
- * Group member information
- */
-export interface GroupMemberInfo {
-  /** User ID */
-  id: string;
-  /** Display name */
-  name: string;
-  /** Nickname in group */
-  card?: string;
-  /** Role in group */
-  role?: 'owner' | 'admin' | 'member';
-}
-
-/**
- * Cache entry with TTL
- */
-export interface CacheEntry<T> {
-  data: T;
-  expiresAt: number;
-}
 
 // =============================================================================
 // Heartbeat Event Status
 // =============================================================================
-
-/**
- * Status included in heartbeat events
- */
-export interface HeartbeatStatus {
-  online: boolean;
-  good: boolean;
-}
-
-/**
- * Heartbeat event structure
- */
-export interface HeartbeatEvent extends NapCatMetaEvent {
-  meta_event_type: 'heartbeat';
-  status: HeartbeatStatus;
-  interval: number;
-}
 
 // =============================================================================
 // get_msg API Response Types
@@ -719,28 +463,4 @@ export interface GetMsgResponse {
   wording: string;
   echo?: string;
   stream?: string;
-}
-
-/**
- * Parsed reply message information
- */
-export interface ReplyMessageData {
-  /** ID of the quoted message */
-  replyMessageId: string;
-  /** Nickname of the quoted message sender */
-  quotedSenderNickname: string;
-  /** Content of the quoted message */
-  quotedMessage: string;
-  /** Content of the reply text (after [CQ:reply]) */
-  replyText: string;
-}
-
-/**
- * Result of parsing a reply message
- */
-export interface ReplyMessageParseResult {
-  /** True if this is a reply message */
-  isReply: boolean;
-  /** Parsed reply data (if isReply is true) */
-  data?: ReplyMessageData;
 }

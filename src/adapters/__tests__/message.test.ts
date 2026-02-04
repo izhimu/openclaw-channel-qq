@@ -9,17 +9,10 @@ import {
   extractPlainTextFromSegments,
   getMessageSummary,
   isPlainTextMessage,
-  createTextContent,
-  createAtContent,
-  createImageContent,
-  createReplyContent,
-  recallMessage,
   hasReplySegment,
   extractReplyMessageId,
   extractTextExcludingReply,
   parseReplyMessage,
-  formatReplyAsMarkdown,
-  type RecallResult,
 } from '../message.js';
 import type {
   NapCatMessageSegment,
@@ -304,106 +297,6 @@ describe('isPlainTextMessage', () => {
   });
 });
 
-describe('content creation helpers', () => {
-  it('createTextContent should create text content', () => {
-    const result = createTextContent('Hello');
-    expect(result).toEqual({ type: 'text', text: 'Hello' });
-  });
-
-  it('createAtContent should create at content', () => {
-    const result = createAtContent('123456');
-    expect(result).toEqual({ type: 'at', userId: '123456', isAll: false });
-  });
-
-  it('createAtContent should create @all content', () => {
-    const result = createAtContent('all', true);
-    expect(result).toEqual({ type: 'at', userId: 'all', isAll: true });
-  });
-
-  it('createImageContent should create image content', () => {
-    const result = createImageContent('https://example.com/img.png');
-    expect(result).toEqual({ type: 'image', url: 'https://example.com/img.png' });
-  });
-
-  it('createReplyContent should create reply content', () => {
-    const result = createReplyContent('msg123');
-    expect(result).toEqual({ type: 'reply', messageId: 'msg123' });
-  });
-});
-
-describe('recallMessage', () => {
-  it('should return success for successful recall', async () => {
-    const mockConnection = {
-      sendRequest: async <T>(_action: string, _params?: Record<string, unknown>) =>
-        ({ status: 'ok', data: undefined }) as { status: string; msg?: string; data?: T },
-    };
-
-    const result = await recallMessage('12345', mockConnection);
-
-    expect(result.success).toBe(true);
-    expect(result.error).toBeUndefined();
-  });
-
-  it('should return error for failed recall', async () => {
-    const mockConnection = {
-      sendRequest: async (_action: string, _params?: Record<string, unknown>) => ({ status: 'failed', msg: 'Message not found' }),
-    };
-
-    const result = await recallMessage('12345', mockConnection);
-
-    expect(result.success).toBe(false);
-    expect(result.error).toBe('Message not found or already recalled');
-    expect(result.code).toBe('MESSAGE_NOT_FOUND');
-  });
-
-  it('should handle timeout error', async () => {
-    const mockConnection = {
-      sendRequest: async (_action: string, _params?: Record<string, unknown>) => ({ status: 'failed', msg: 'timeout' }),
-    };
-
-    const result = await recallMessage('12345', mockConnection);
-
-    expect(result.success).toBe(false);
-    expect(result.code).toBe('RECALL_TIMEOUT');
-  });
-
-  it('should handle permission error', async () => {
-    const mockConnection = {
-      sendRequest: async (_action: string, _params?: Record<string, unknown>) => ({ status: 'failed', msg: 'permission denied' }),
-    };
-
-    const result = await recallMessage('12345', mockConnection);
-
-    expect(result.success).toBe(false);
-    expect(result.code).toBe('PERMISSION_DENIED');
-  });
-
-  it('should handle network errors', async () => {
-    const mockConnection = {
-      sendRequest: async (_action: string, _params?: Record<string, unknown>) => {
-        throw new Error('Network error');
-      },
-    };
-
-    const result = await recallMessage('12345', mockConnection);
-
-    expect(result.success).toBe(false);
-    expect(result.code).toBe('RECALL_ERROR');
-  });
-
-  it('should handle numeric message ID', async () => {
-    const mockConnection = {
-      sendRequest: async <T>(_action: string, params?: Record<string, unknown>) => {
-        expect(params?.message_id).toBe(12345);
-        return { status: 'ok', data: undefined } as { status: string; msg?: string; data?: T };
-      },
-    };
-
-    const result = await recallMessage(12345, mockConnection);
-    expect(result.success).toBe(true);
-  });
-});
-
 describe('hasReplySegment', () => {
   it('should return true when reply segment is present', () => {
     const segments: NapCatMessageSegment[] = [
@@ -537,45 +430,5 @@ describe('parseReplyMessage', () => {
     expect(result.isReply).toBe(true);
     expect(result.data?.replyMessageId).toBe('872893135');
     expect(result.data?.replyText).toBe('111');
-  });
-});
-
-describe('formatReplyAsMarkdown', () => {
-  it('should format reply message as markdown', () => {
-    const data = {
-      replyMessageId: '872893135',
-      quotedSenderNickname: '小玉',
-      quotedMessage: '这是被引用的消息',
-      replyText: '111',
-    };
-
-    const result = formatReplyAsMarkdown(data);
-
-    expect(result).toBe(`[回复]
-
-## 引用消息
-
-小玉: 这是被引用的消息
-
-## 回复消息
-
-111`);
-  });
-
-  it('should handle multiline quoted message', () => {
-    const data = {
-      replyMessageId: '872893135',
-      quotedSenderNickname: '小玉',
-      quotedMessage: '第一行\n第二行\n第三行',
-      replyText: '回复内容',
-    };
-
-    const result = formatReplyAsMarkdown(data);
-
-    expect(result).toContain('小玉: 第一行');
-    expect(result).toContain('第二行');
-    expect(result).toContain('第三行');
-    expect(result).toContain('回复消息');
-    expect(result).toContain('回复内容');
   });
 });

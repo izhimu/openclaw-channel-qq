@@ -44,15 +44,6 @@ export function messageIdToString(messageId: number | string): string {
   return String(messageId);
 }
 
-/**
- * Convert OpenClaw string ID to number for NapCat
- * Returns the original string if not a valid number
- */
-export function messageIdToNumber(messageId: string): number | string {
-  const num = Number(messageId);
-  return isNaN(num) ? messageId : num;
-}
-
 // =============================================================================
 // Logger
 // =============================================================================
@@ -227,15 +218,6 @@ export const FACE_ID_TO_EMOJI: Record<string, string> = {
  */
 export function getEmojiForFaceId(faceId: string): string {
   return FACE_ID_TO_EMOJI[faceId] || `[表情:${faceId}]`;
-}
-
-/**
- * Try to map emoji to QQ face ID
- * Returns undefined if no mapping exists
- */
-export function getFaceIdForEmoji(emoji: string): string | undefined {
-  const entry = Object.entries(FACE_ID_TO_EMOJI).find(([, e]) => e === emoji);
-  return entry?.[0];
 }
 
 // =============================================================================
