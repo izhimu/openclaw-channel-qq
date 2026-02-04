@@ -41,8 +41,8 @@ export const qqNapCatPlugin: ChannelPlugin<AccountConfig> = {
   id: "openclaw-channel-qq",
   meta: {
     id: "openclaw-channel-qq",
-    label: "QQ (NapCat)",
-    selectionLabel: "QQ NapCat",
+    label: "QQ",
+    selectionLabel: "QQ",
     docsPath: "/docs/channels/openclaw-channel-qq",
     blurb: "通过 NapCat WebSocket 连接 QQ 机器人",
     order: 50,
