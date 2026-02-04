@@ -3,7 +3,7 @@
  *
  * 提供 openclaw onboard 命令的交互式配置支持
  */
-import { listQQNapCatAccountIds, resolveQQNapCatAccount } from "./config.js";
+import { listQQNapCatAccountIds, resolveQQNapCatAccount } from "./core/config.js";
 
 const DEFAULT_ACCOUNT_ID = "default";
 

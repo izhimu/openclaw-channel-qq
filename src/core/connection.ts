@@ -9,11 +9,13 @@ import type {
   NapCatRequest,
   NapCatResponse,
   NapCatEvent,
+  NapCatMetaEvent,
   AccountConfig,
   ConnectionState,
   ConnectionStatus,
   PendingRequest,
-} from './types.js';
+  HealthStatus,
+} from '../types/index.js';
 import {
   generateEchoId,
   delay,
@@ -23,10 +25,10 @@ import {
   logWarn,
   logError,
   getCloseCodeMessage,
-} from './utils.js';
+} from '../utils/index.js';
 
-const HEARTBEAT_INTERVAL = 30000; // 30 seconds
-const HEARTBEAT_TIMEOUT = 10000; // 10 seconds
+const META_EVENT_HEARTBEAT_INTERVAL = 30000; // NapCat sends heartbeat every 30s
+const HEARTBEAT_TIMEOUT = 60000; // 60 seconds - consider connection dead if no heartbeat
 const MAX_RECONNECT_ATTEMPTS = 10;
 const REQUEST_TIMEOUT = 30000; // 30 seconds
 
@@ -40,10 +42,13 @@ export class ConnectionManager extends EventEmitter {
   private state: ConnectionState = 'disconnected';
   private botUserId?: number;
 
-  // Heartbeat
-  private heartbeatTimer?: NodeJS.Timeout;
+  // Heartbeat - OneBot 11 meta_event based
   private heartbeatTimeoutTimer?: NodeJS.Timeout;
   private lastHeartbeatTime = 0;
+
+  // Connection stats
+  private connectedAt = 0;
+  private totalReconnectAttempts = 0;
 
   // Reconnection
   private reconnectTimer?: NodeJS.Timeout;
@@ -52,6 +57,13 @@ export class ConnectionManager extends EventEmitter {
 
   // Pending requests
   private pendingRequests = new Map<string, PendingRequest>();
+
+  // Health status
+  private healthStatus: HealthStatus = {
+    healthy: false,
+    lastHeartbeatAt: 0,
+    consecutiveFailures: 0,
+  };
 
   constructor(accountId: string, config: AccountConfig) {
     super();
@@ -164,8 +176,10 @@ export class ConnectionManager extends EventEmitter {
   private handleOpen(): void {
     logInfo('connection', `Connected to NapCat for account ${this.accountId}`);
     this.setState('connected');
+    this.connectedAt = Date.now();
+    this.totalReconnectAttempts += this.reconnectAttempts;
     this.reconnectAttempts = 0;
-    this.startHeartbeat();
+    this.startHeartbeatTimeout();
     this.emit('connected');
   }
 
@@ -176,19 +190,66 @@ export class ConnectionManager extends EventEmitter {
       // Handle response to a request
       if ('echo' in message && message.echo) {
         this.handleResponse(message as NapCatResponse);
+        return;
       }
+
+      // Handle meta_event (heartbeat/lifecycle)
+      if ('post_type' in message && message.post_type === 'meta_event') {
+        this.handleMetaEvent(message as NapCatMetaEvent);
+        return;
+      }
+
       // Handle event
-      else if ('post_type' in message) {
+      if ('post_type' in message) {
         this.emit('event', message as NapCatEvent);
+        return;
       }
+
       // Handle response without echo (unsolicited)
-      else {
-        logDebug('connection', `Received unsolicited response:`, message);
-      }
+      logDebug('connection', `Received unsolicited response:`, message);
 
     } catch (error) {
       logError('connection', `Failed to parse message:`, error);
     }
+  }
+
+  /**
+   * Handle OneBot 11 meta_event (lifecycle and heartbeat)
+   */
+  private handleMetaEvent(event: NapCatMetaEvent): void {
+    if (event.meta_event_type === 'heartbeat') {
+      this.lastHeartbeatTime = Date.now();
+      this.healthStatus = {
+        healthy: true,
+        lastHeartbeatAt: this.lastHeartbeatTime,
+        consecutiveFailures: 0,
+      };
+
+      // Reset heartbeat timeout
+      this.startHeartbeatTimeout();
+
+      logDebug('connection', `Received heartbeat for account ${this.accountId}`);
+      this.emit('heartbeat', this.healthStatus);
+    } else if (event.meta_event_type === 'lifecycle') {
+      logInfo('connection', `Lifecycle event for account ${this.accountId}: ${event.sub_type}`);
+      this.emit('lifecycle', event);
+    }
+  }
+
+  /**
+   * Start heartbeat timeout timer
+   */
+  private startHeartbeatTimeout(): void {
+    this.clearHeartbeatTimers();
+
+    this.heartbeatTimeoutTimer = setTimeout(() => {
+      logWarn('connection', `Heartbeat timeout for account ${this.accountId}`);
+      this.healthStatus.healthy = false;
+      this.healthStatus.consecutiveFailures++;
+      this.emit('heartbeat-timeout');
+      // Force reconnect
+      this.ws?.terminate();
+    }, HEARTBEAT_TIMEOUT);
   }
 
   private handleError(error: Error): void {
@@ -260,52 +321,13 @@ export class ConnectionManager extends EventEmitter {
   }
 
   // ==========================================================================
-  // Heartbeat Logic
+  // Heartbeat Logic (OneBot 11 meta_event based)
   // ==========================================================================
 
-  private startHeartbeat(): void {
-    this.clearHeartbeatTimers();
-    this.lastHeartbeatTime = Date.now();
-
-    this.heartbeatTimer = setInterval(() => {
-      this.sendHeartbeat();
-    }, HEARTBEAT_INTERVAL);
-
-    logDebug('connection', `Started heartbeat for account ${this.accountId}`);
-  }
-
   private clearHeartbeatTimers(): void {
-    if (this.heartbeatTimer) {
-      clearInterval(this.heartbeatTimer);
-      this.heartbeatTimer = undefined;
-    }
     if (this.heartbeatTimeoutTimer) {
       clearTimeout(this.heartbeatTimeoutTimer);
       this.heartbeatTimeoutTimer = undefined;
-    }
-  }
-
-  private sendHeartbeat(): void {
-    if (!this.isConnected()) {
-      this.clearHeartbeatTimers();
-      return;
-    }
-
-    try {
-      // Send a minimal ping message
-      this.ws?.send(JSON.stringify({ ping: Date.now() }));
-
-      // Set timeout to detect if we don't receive a response
-      this.heartbeatTimeoutTimer = setTimeout(() => {
-        logWarn('connection', `Heartbeat timeout for account ${this.accountId}`);
-        // Force close and reconnect - use terminate() instead of close() for abnormal closure
-        this.ws?.terminate();
-      }, HEARTBEAT_TIMEOUT);
-
-      logDebug('connection', `Sent heartbeat for account ${this.accountId}`);
-
-    } catch (error) {
-      logError('connection', `Failed to send heartbeat:`, error);
     }
   }
 
@@ -424,6 +446,29 @@ export class ConnectionManager extends EventEmitter {
       lastAttempted: this.reconnectAttempts > 0 ? Date.now() : undefined,
       error: this.state === 'failed' ? 'Connection failed' : undefined,
       reconnectAttempts: this.reconnectAttempts > 0 ? this.reconnectAttempts : undefined,
+    };
+  }
+
+  /**
+   * Get connection health status
+   */
+  getHealthStatus(): HealthStatus {
+    return this.healthStatus;
+  }
+
+  /**
+   * Get connection statistics
+   */
+  getStats(): {
+    connectedAt: number;
+    uptime: number;
+    totalReconnectAttempts: number;
+  } {
+    const now = Date.now();
+    return {
+      connectedAt: this.connectedAt,
+      uptime: this.state === 'connected' && this.connectedAt > 0 ? now - this.connectedAt : 0,
+      totalReconnectAttempts: this.totalReconnectAttempts + this.reconnectAttempts,
     };
   }
 

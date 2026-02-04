@@ -2,7 +2,7 @@
  * QQ NapCat 配置管理
  */
 
-import type { AccountConfig } from "./types.js";
+import type { AccountConfig } from "../types/index.js";
 
 const DEFAULT_ACCOUNT_ID = "default";
 

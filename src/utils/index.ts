@@ -10,7 +10,7 @@ import type {
   NapCatImageSegment,
   NapCatReplySegment,
   NapCatFaceSegment,
-} from './types.js';
+} from '../types/index.js';
 
 // =============================================================================
 // ID Generation

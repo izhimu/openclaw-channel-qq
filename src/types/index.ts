@@ -28,11 +28,13 @@ export interface NapCatResponse<T = unknown> {
 export type NapCatAction =
   | 'send_private_msg'
   | 'send_group_msg'
+  | 'delete_msg'
   | 'get_msg'
   | 'get_login_info'
   | 'get_friend_list'
   | 'get_group_list'
   | 'get_group_member_info'
+  | 'get_group_member_list'
   | 'set_essence_msg'
   | 'delete_essence_msg'
   | 'set_group_add_request'
@@ -45,7 +47,6 @@ export type NapCatAction =
   | 'set_group_anonymous'
   | 'set_group_anonymous_ban'
   | 'send_group_sign'
-  | 'get_friend_list'
   | 'delete_friend'
   | 'get_group_honor_info'
   | 'get_essence_msg_list'
@@ -432,4 +433,182 @@ export interface PendingRequest {
   resolve: (response: NapCatResponse) => void;
   reject: (error: Error) => void;
   timeout: NodeJS.Timeout;
+}
+
+// =============================================================================
+// OpenClaw Plugin SDK Types (for adapters)
+// =============================================================================
+
+/**
+ * Standard outbound delivery result
+ */
+export interface OutboundDeliveryResult {
+  /** Channel identifier */
+  channel: string;
+  /** Message ID returned by the channel */
+  messageId: string;
+  /** Error if delivery failed */
+  error?: Error;
+  /** Timestamp of delivery */
+  deliveredAt?: number;
+  /** Additional metadata */
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Channel gateway context passed to startAccount/stopAccount
+ */
+export interface ChannelGatewayContext<TAccountConfig> {
+  /** Account configuration */
+  account: TAccountConfig;
+  /** Full configuration */
+  cfg: unknown;
+  /** Logger instance */
+  log?: {
+    debug: (message: string, ...args: unknown[]) => void;
+    info: (message: string, ...args: unknown[]) => void;
+    warn: (message: string, ...args: unknown[]) => void;
+    error: (message: string, ...args: unknown[]) => void;
+  };
+  /** Get current runtime status */
+  getStatus: () => ChannelRuntimeStatus;
+  /** Set runtime status */
+  setStatus: (status: ChannelRuntimeStatus) => void;
+}
+
+/**
+ * Runtime status for a channel account
+ */
+export interface ChannelRuntimeStatus {
+  accountId: string;
+  running: boolean;
+  connected: boolean;
+  healthy?: boolean;
+  lastConnectedAt: number | null;
+  lastError: string | null;
+  uptime?: number;
+  reconnectCount?: number;
+}
+
+/**
+ * Health status for connection
+ */
+export interface HealthStatus {
+  healthy: boolean;
+  lastHeartbeatAt: number;
+  latencyMs?: number;
+  consecutiveFailures: number;
+}
+
+// =============================================================================
+// Security Adapter Types
+// =============================================================================
+
+/**
+ * DM policy for a peer
+ */
+export interface DmPolicy {
+  /** Whether DMs are allowed */
+  allow: boolean;
+  /** Reason if DMs are not allowed */
+  reason?: string;
+}
+
+/**
+ * Security warning
+ */
+export interface SecurityWarning {
+  /** Warning code */
+  code: string;
+  /** Warning message */
+  message: string;
+  /** Severity level */
+  severity: 'low' | 'medium' | 'high';
+}
+
+/**
+ * Security context for warnings
+ */
+export interface SecurityContext {
+  accountId: string;
+  chatType: 'direct' | 'group';
+  chatId: string;
+  senderId?: string;
+}
+
+// =============================================================================
+// Directory Adapter Types
+// =============================================================================
+
+/**
+ * Peer (friend) information
+ */
+export interface PeerInfo {
+  /** User ID */
+  id: string;
+  /** Display name */
+  name: string;
+  /** Optional nickname */
+  nickname?: string;
+  /** Avatar URL */
+  avatarUrl?: string;
+}
+
+/**
+ * Group information
+ */
+export interface GroupInfo {
+  /** Group ID */
+  id: string;
+  /** Group name */
+  name: string;
+  /** Member count */
+  memberCount?: number;
+  /** Maximum members */
+  maxMembers?: number;
+  /** Group owner ID */
+  ownerId?: string;
+}
+
+/**
+ * Group member information
+ */
+export interface GroupMemberInfo {
+  /** User ID */
+  id: string;
+  /** Display name */
+  name: string;
+  /** Nickname in group */
+  card?: string;
+  /** Role in group */
+  role?: 'owner' | 'admin' | 'member';
+}
+
+/**
+ * Cache entry with TTL
+ */
+export interface CacheEntry<T> {
+  data: T;
+  expiresAt: number;
+}
+
+// =============================================================================
+// Heartbeat Event Status
+// =============================================================================
+
+/**
+ * Status included in heartbeat events
+ */
+export interface HeartbeatStatus {
+  online: boolean;
+  good: boolean;
+}
+
+/**
+ * Heartbeat event structure
+ */
+export interface HeartbeatEvent extends NapCatMetaEvent {
+  meta_event_type: 'heartbeat';
+  status: HeartbeatStatus;
+  interval: number;
 }

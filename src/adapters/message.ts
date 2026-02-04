@@ -15,8 +15,8 @@ import type {
   OpenClawAtContent,
   OpenClawImageContent,
   OpenClawReplyContent,
-} from './types.js';
-import { logWarn, extractImageUrl, getEmojiForFaceId, getFaceIdForEmoji } from './utils.js';
+} from '../types/index.js';
+import { logWarn, extractImageUrl, getEmojiForFaceId, getFaceIdForEmoji } from '../utils/index.js';
 
 // =============================================================================
 // NapCat -> OpenClaw Adapters (Inbound)
@@ -211,7 +211,7 @@ function napCatFaceToOpenClaw(segment: NapCatFaceSegment): OpenClawTextContent {
   };
 }
 
-function napCatPokeToOpenClaw(segment: NapCatPokeSegment): OpenClawTextContent {
+function napCatPokeToOpenClaw(_segment: NapCatPokeSegment): OpenClawTextContent {
   return {
     type: 'text',
     text: '[戳一戳]',
@@ -224,11 +224,24 @@ function napCatPokeToOpenClaw(segment: NapCatPokeSegment): OpenClawTextContent {
 
 /**
  * Convert OpenClaw message content to NapCat message segments
+ * @param content - OpenClaw message content array
+ * @param replyToId - Optional message ID to reply to
  */
 export function openClawToNapCatMessage(
-  content: OpenClawMessageContent[]
+  content: OpenClawMessageContent[],
+  replyToId?: string
 ): NapCatMessageSegment[] {
   const segments: NapCatMessageSegment[] = [];
+
+  // Add reply segment at the start if replyToId is provided
+  if (replyToId) {
+    segments.push({
+      type: 'reply',
+      data: {
+        id: replyToId,
+      },
+    });
+  }
 
   for (const item of content) {
     const segment = openClawSegmentToNapCat(item);
@@ -482,4 +495,90 @@ export function containsAtAll(contents: OpenClawMessageContent[]): boolean {
   return contents.some(
     c => c.type === 'at' && isAtAll(c as OpenClawAtContent)
   );
+}
+
+// =============================================================================
+// Message Recall (delete_msg)
+// =============================================================================
+
+/**
+ * Result of a recall operation
+ */
+export interface RecallResult {
+  success: boolean;
+  error?: string;
+  code?: string;
+}
+
+/**
+ * Recall (delete) a message
+ * Note: Messages can only be recalled within 2 minutes on QQ
+ * @param messageId - The message ID to recall
+ * @param connection - Connection to use for the request
+ * @returns Recall result
+ */
+export async function recallMessage(
+  messageId: string | number,
+  connection: {
+    sendRequest: <T>(action: string, params?: Record<string, unknown>) => Promise<{ status: string; msg?: string; data?: T }>;
+  }
+): Promise<RecallResult> {
+  try {
+    const response = await connection.sendRequest('delete_msg', {
+      message_id: Number(messageId),
+    });
+
+    if (response.status === 'ok') {
+      return { success: true };
+    } else {
+      // Parse error message to determine the type of failure
+      const errorMsg = response.msg || 'Unknown error';
+
+      if (errorMsg.includes('timeout') || errorMsg.includes('超时')) {
+        return {
+          success: false,
+          error: 'Message recall timeout - message may be too old to recall',
+          code: 'RECALL_TIMEOUT',
+        };
+      }
+
+      if (errorMsg.includes('permission') || errorMsg.includes('权限')) {
+        return {
+          success: false,
+          error: 'Permission denied - cannot recall this message',
+          code: 'PERMISSION_DENIED',
+        };
+      }
+
+      if (errorMsg.includes('not found') || errorMsg.includes('不存在')) {
+        return {
+          success: false,
+          error: 'Message not found or already recalled',
+          code: 'MESSAGE_NOT_FOUND',
+        };
+      }
+
+      return {
+        success: false,
+        error: errorMsg,
+        code: 'RECALL_FAILED',
+      };
+    }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+
+    if (errorMessage.includes('timeout')) {
+      return {
+        success: false,
+        error: 'Request timeout - message may be too old to recall',
+        code: 'RECALL_TIMEOUT',
+      };
+    }
+
+    return {
+      success: false,
+      error: errorMessage,
+      code: 'RECALL_ERROR',
+    };
+  }
 }
