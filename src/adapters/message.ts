@@ -12,8 +12,6 @@ import type {
   OpenClawJsonContent,
   GetMsgData,
   GetMsgResponse,
-  ReplyMessageData,
-  ReplyMessageParseResult,
 } from '../types/index.js';
 import { logWarn, extractImageUrl, getEmojiForFaceId } from '../utils/index.js';
 import { CQCodeUtils, type CQNode } from '../utils/cqcode.js';
@@ -438,41 +436,6 @@ export function getMessageSummary(segments: NapCatMessageSegment[], maxLength = 
 }
 
 // =============================================================================
-// Content Creation Helpers
-// =============================================================================
-
-/**
- * Create a text message content
- */
-export function createTextContent(text: string): { type: 'text'; text: string } {
-  return { type: 'text', text };
-}
-
-/**
- * Create an at-mention message content
- */
-export function createAtContent(
-  userId: string,
-  isAll = false
-): { type: 'at'; userId: string; isAll: boolean } {
-  return { type: 'at', userId, isAll };
-}
-
-/**
- * Create an image message content
- */
-export function createImageContent(url: string): { type: 'image'; url: string } {
-  return { type: 'image', url };
-}
-
-/**
- * Create a reply message content
- */
-export function createReplyContent(messageId: string): { type: 'reply'; messageId: string } {
-  return { type: 'reply', messageId };
-}
-
-// =============================================================================
 // Special Message Type Handling
 // =============================================================================
 
@@ -507,83 +470,6 @@ export function parsePokeMessage(
   };
 }
 
-// =============================================================================
-// Message Recall (delete_msg)
-// =============================================================================
-
-/**
- * Result of a recall operation
- */
-export interface RecallResult {
-  success: boolean;
-  error?: string;
-  code?: string;
-}
-
-/**
- * Recall (delete) a message
- * Note: Messages can only be recalled within 2 minutes on QQ
- */
-export async function recallMessage(
-  messageId: string | number,
-  connection: {
-    sendRequest: (action: string, params?: Record<string, unknown>) => Promise<{
-      status: string;
-      msg?: string;
-      data?: unknown;
-    }>;
-  }
-): Promise<RecallResult> {
-  try {
-    const response = await connection.sendRequest('delete_msg', {
-      message_id: Number(messageId),
-    });
-
-    if (response.status === 'ok') {
-      return { success: true };
-    }
-
-    const errorMsg = response.msg || 'Unknown error';
-
-    if (errorMsg.includes('timeout') || errorMsg.includes('超时')) {
-      return {
-        success: false,
-        error: 'Message recall timeout - message may be too old to recall',
-        code: 'RECALL_TIMEOUT',
-      };
-    }
-
-    if (errorMsg.includes('permission') || errorMsg.includes('权限')) {
-      return {
-        success: false,
-        error: 'Permission denied - cannot recall this message',
-        code: 'PERMISSION_DENIED',
-      };
-    }
-
-    if (errorMsg.includes('not found') || errorMsg.includes('不存在')) {
-      return {
-        success: false,
-        error: 'Message not found or already recalled',
-        code: 'MESSAGE_NOT_FOUND',
-      };
-    }
-
-    return { success: false, error: errorMsg, code: 'RECALL_FAILED' };
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-
-    if (errorMessage.includes('timeout')) {
-      return {
-        success: false,
-        error: 'Request timeout - message may be too old to recall',
-        code: 'RECALL_TIMEOUT',
-      };
-    }
-
-    return { success: false, error: errorMessage, code: 'RECALL_ERROR' };
-  }
-}
 
 // =============================================================================
 // Reply Message Parsing
@@ -703,6 +589,30 @@ async function fetchQuotedMessage(
 }
 
 /**
+ * Parsed reply message information
+ */
+interface ReplyMessageData {
+  /** ID of the quoted message */
+  replyMessageId: string;
+  /** Nickname of the quoted message sender */
+  quotedSenderNickname: string;
+  /** Content of the quoted message */
+  quotedMessage: string;
+  /** Content of the reply text (after [CQ:reply]) */
+  replyText: string;
+}
+
+/**
+ * Result of parsing a reply message
+ */
+interface ReplyMessageParseResult {
+  /** True if this is a reply message */
+  isReply: boolean;
+  /** Parsed reply data (if isReply is true) */
+  data?: ReplyMessageData;
+}
+
+/**
  * Parse reply message and fetch quoted message content
  *
  * @param segments - Message segments (can be string or array)
@@ -762,57 +672,4 @@ export async function parseReplyMessage(
       replyText,
     },
   };
-}
-
-/**
- * Format reply message as markdown
- *
- * Output format:
- * ```markdown
- * [回复]
- *
- * ## 引用消息
- *
- * ${sender.nickname}: ${message}
- *
- * ## 回复消息
- *
- * ${replyText}
- * ```
- *
- * @param data - ReplyMessageData to format
- * @returns Formatted markdown string
- */
-export function formatReplyAsMarkdown(data: ReplyMessageData): string {
-  const { quotedSenderNickname, quotedMessage, replyText } = data;
-
-  return `[回复]
-
-## 引用消息
-
-${quotedSenderNickname}: ${quotedMessage}
-
-## 回复消息
-
-${replyText}`;
-}
-
-/**
- * Parse and format reply message in one step
- *
- * @param segments - Message segments (can be string or array)
- * @param connection - Optional NapCat connection for fetching quoted message
- * @returns Formatted markdown string or null if not a reply message
- */
-export async function parseAndFormatReply(
-  segments: NapCatMessageSegment[] | string,
-  connection?: NapCatConnection
-): Promise<string | null> {
-  const result = await parseReplyMessage(segments, connection);
-
-  if (!result.isReply || !result.data) {
-    return null;
-  }
-
-  return formatReplyAsMarkdown(result.data);
 }

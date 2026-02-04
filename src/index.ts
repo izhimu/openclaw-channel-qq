@@ -20,8 +20,6 @@ import {
   applyQQNapCatAccountConfig,
 } from "./core/config.js";
 import { qqNapCatOnboardingAdapter } from "./onboarding.js";
-import { createSecurityAdapter } from "./adapters/security.js";
-import { createDirectoryAdapter } from "./adapters/directory.js";
 
 // =============================================================================
 // Plugin State
@@ -60,20 +58,6 @@ export const qqNapCatPlugin: ChannelPlugin<AccountConfig> = {
 
   // CLI onboarding wizard
   onboarding: qqNapCatOnboardingAdapter,
-
-  // Security adapter
-  security: createSecurityAdapter({
-    getConnection: (accountId: string) => {
-      return connectionManager?.getConnection(accountId);
-    },
-  }),
-
-  // Directory adapter
-  directory: createDirectoryAdapter({
-    getConnection: (accountId: string) => {
-      return connectionManager?.getConnection(accountId);
-    },
-  }),
 
   // 消息目标解析
   messaging: {
@@ -166,18 +150,12 @@ export const qqNapCatPlugin: ChannelPlugin<AccountConfig> = {
       try {
         const messageSegments = openClawToNapCatMessage([{ type: "text", text }], replyToId ?? undefined);
 
-        let response;
-        if (chatType === "direct") {
-          response = await conn.sendRequest("send_private_msg", {
-            user_id: Number(chatId),
-            message: messageSegments,
-          });
-        } else {
-          response = await conn.sendRequest("send_group_msg", {
-            group_id: Number(chatId),
-            message: messageSegments,
-          });
-        }
+        const response = await conn.sendRequest("send_msg", {
+          message_type: chatType === "direct" ? "private" : "group",
+          user_id: chatType === "direct" ? Number(chatId) : undefined,
+          group_id: chatType === "group" ? Number(chatId) : undefined,
+          message: messageSegments,
+        });
 
         // Update lastOutboundAt timestamp on successful send
         if (response.status === "ok") {
@@ -305,18 +283,12 @@ export const qqNapCatPlugin: ChannelPlugin<AccountConfig> = {
 
         logDebug("outbound", `Message segments: ${JSON.stringify(messageSegments)}`);
 
-        let response;
-        if (chatType === "direct") {
-          response = await conn.sendRequest("send_private_msg", {
-            user_id: Number(chatId),
-            message: messageSegments,
-          });
-        } else {
-          response = await conn.sendRequest("send_group_msg", {
-            group_id: Number(chatId),
-            message: messageSegments,
-          });
-        }
+        const response = await conn.sendRequest("send_msg", {
+          message_type: chatType === "direct" ? "private" : "group",
+          user_id: chatType === "direct" ? Number(chatId) : undefined,
+          group_id: chatType === "group" ? Number(chatId) : undefined,
+          message: messageSegments,
+        });
 
         logDebug("outbound", `NapCat response - status: ${response.status}, retcode: ${response.retcode}, msg: ${response.msg ?? "none"}, data: ${JSON.stringify(response.data)}`);
 
@@ -454,8 +426,8 @@ export const qqNapCatPlugin: ChannelPlugin<AccountConfig> = {
 
       try {
         const startTime = Date.now();
-        // Use get_login_info as a lightweight probe
-        await conn.sendRequest('get_login_info', {});
+        // Use get_status as a lightweight probe
+        await conn.sendRequest('get_status', {});
         const latencyMs = Date.now() - startTime;
 
         return {

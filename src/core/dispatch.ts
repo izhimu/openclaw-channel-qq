@@ -172,17 +172,12 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
     const messageSegments = [{ type: 'text', data: { text } }];
 
     try {
-      if (isGroup) {
-        await conn.sendRequest('send_group_msg', {
-          group_id: Number(chatId),
-          message: messageSegments,
-        });
-      } else {
-        await conn.sendRequest('send_private_msg', {
-          user_id: Number(chatId),
-          message: messageSegments,
-        });
-      }
+      await conn.sendRequest('send_msg', {
+        message_type: isGroup ? 'group' : 'private',
+        group_id: isGroup ? Number(chatId) : undefined,
+        user_id: !isGroup ? Number(chatId) : undefined,
+        message: messageSegments,
+      });
       log?.info(`[openclaw-channel-qq:${accountId}] Sent reply: ${text.slice(0, 100)}`);
     } catch (error) {
       log?.error(`[openclaw-channel-qq:${accountId}] Send failed: ${error}`);
