@@ -5,7 +5,7 @@
 
 import type { AccountConfig, OpenClawMessageContent } from '../types/index.js';
 import type { ConnectionManager } from './connection.js';
-import { napCatToOpenClawMessage } from '../adapters/message.js';
+import { napCatToOpenClawMessage, napCatToOpenClawMessageAsync, type NapCatConnection } from '../adapters/message.js';
 import { logDebug, logWarn } from '../utils/index.js';
 
 /**
@@ -225,7 +225,9 @@ export async function handleGroupMessage(
   }
 
   const botUserId = conn.getBotUserId();
-  const { content } = napCatToOpenClawMessage(event.message, botUserId);
+
+  // Use async version to fetch file data
+  const { content } = await napCatToOpenClawMessageAsync(event.message, botUserId, conn as NapCatConnection);
 
   // Convert content array to plain text for the message body
   const plainText = contentToPlainText(content);
@@ -285,7 +287,8 @@ export async function handlePrivateMessage(
     conn.setBotUserId(event.self_id);
   }
 
-  const { content } = napCatToOpenClawMessage(event.message);
+  // Use async version to fetch file data
+  const { content } = await napCatToOpenClawMessageAsync(event.message, undefined, conn as NapCatConnection);
 
   // Convert content array to plain text for the message body
   const plainText = contentToPlainText(content);

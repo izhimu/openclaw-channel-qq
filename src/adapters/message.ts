@@ -137,6 +137,100 @@ export function napCatToOpenClawMessage(
 }
 
 /**
+ * Connection interface for async operations
+ */
+export interface NapCatConnection {
+  sendRequest: <T>(action: string, params?: Record<string, unknown>) => Promise<{
+    status: string;
+    msg?: string;
+    data?: T;
+  }>;
+}
+
+/**
+ * Get file data from NapCat
+ */
+interface GetFileData {
+  file?: string;
+  url?: string;
+  file_size?: string;
+  file_name?: string;
+  base64?: string;
+}
+
+/**
+ * Enrich file segments with actual file data
+ * This is an async operation that calls NapCat's get_file API
+ */
+export async function enrichFileSegments(
+  segments: NapCatMessageSegment[],
+  connection?: NapCatConnection
+): Promise<NapCatMessageSegment[]> {
+  const enrichedSegments = [...segments];
+  const fileIndices: number[] = [];
+
+  for (let i = 0; i < enrichedSegments.length; i++) {
+    if (enrichedSegments[i].type === 'file') {
+      fileIndices.push(i);
+    }
+  }
+
+  if (fileIndices.length === 0 || !connection) {
+    return enrichedSegments;
+  }
+
+  for (const index of fileIndices) {
+    const segment = enrichedSegments[index] as NapCatFileSegment;
+    const fileId = segment.data.file_id || segment.data.file;
+
+    if (!fileId) continue;
+
+    try {
+      const response = await connection.sendRequest<GetFileData>('get_file', { file: fileId });
+
+      if (response.status === 'ok' && response.data) {
+        (segment.data as any).url = response.data.url;
+        (segment.data as any).base64 = response.data.base64;
+      }
+    } catch (error) {
+      logWarn('adapters', `Failed to fetch file data for ${fileId}: ${error}`);
+    }
+  }
+
+  return enrichedSegments;
+}
+
+/**
+ * Convert NapCat message segments to OpenClaw message content (async version)
+ * This version can fetch file content using get_file API
+ */
+export async function napCatToOpenClawMessageAsync(
+  segments: NapCatMessageSegment[] | string,
+  botUserId?: number,
+  connection?: NapCatConnection
+): Promise<{ content: OpenClawMessageContent[]; isMention: boolean }> {
+  const normalizedSegments = normalizeMessageSegments(segments);
+  const enrichedSegments = await enrichFileSegments(normalizedSegments, connection);
+
+  const content: OpenClawMessageContent[] = [];
+  let isMention = false;
+
+  for (const segment of enrichedSegments) {
+    const result = napCatSegmentToOpenClaw(segment, botUserId);
+    if (result) {
+      content.push(result);
+      if (result.type === 'at') {
+        if (botUserId && result.userId === String(botUserId)) {
+          isMention = true;
+        }
+      }
+    }
+  }
+
+  return { content, isMention };
+}
+
+/**
  * Type guard for text segment
  */
 function isTextSegment(segment: NapCatMessageSegment): segment is NapCatTextSegment {
@@ -304,9 +398,34 @@ function napCatFileToOpenClaw(segment: NapCatFileSegment): OpenClawTextContent {
   const fileName = segment.data.file || 'unknown';
   const fileSize = segment.data.file_size;
   const sizeText = fileSize ? ` (${formatFileSize(fileSize)})` : '';
+  const url = (segment.data as any).url;
+  const base64 = (segment.data as any).base64;
+
+  // Build file info text
+  let text = `[文件] ${fileName}${sizeText}`;
+
+  // Add URL if available
+  if (url) {
+    text += `\n下载链接: ${url}`;
+  }
+
+  // Add base64 content for small text files
+  if (base64) {
+    // Decode base64 to check if it's text
+    try {
+      const decoded = atob(base64);
+      // Check if it looks like text (ASCII only, reasonable size)
+      if (decoded.length < 5000 && /^[\x20-\x7E\r\n\t]*$/.test(decoded)) {
+        text += `\n文件内容:\n${decoded}`;
+      }
+    } catch {
+      // Not valid base64, skip
+    }
+  }
+
   return {
     type: 'text',
-    text: `[文件] ${fileName}${sizeText}`,
+    text,
   };
 }
 
