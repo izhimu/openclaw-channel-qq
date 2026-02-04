@@ -42,6 +42,11 @@ function decodeHtmlEntities(value: string): string {
  */
 function parseCQParams(paramsStr: string): Record<string, string> {
   const data: Record<string, string> = {};
+
+  // Decode HTML entities first, before parsing keys
+  // This handles cases where parameter names are encoded (e.g., "&#100;ata=")
+  paramsStr = decodeHtmlEntities(paramsStr);
+
   let pos = 0;
 
   while (pos < paramsStr.length) {
@@ -90,7 +95,7 @@ function parseCQParams(paramsStr: string): Record<string, string> {
       pos = nextComma === -1 ? paramsStr.length : nextComma;
     }
 
-    data[key] = decodeHtmlEntities(value);
+    data[key] = value;
   }
 
   return data;
