@@ -223,9 +223,10 @@ export const FACE_ID_TO_EMOJI: Record<string, string> = {
 
 /**
  * Get emoji for QQ face ID
+ * For unknown IDs, shows the ID for reference
  */
 export function getEmojiForFaceId(faceId: string): string {
-  return FACE_ID_TO_EMOJI[faceId] || '[表情]';
+  return FACE_ID_TO_EMOJI[faceId] || `[表情:${faceId}]`;
 }
 
 /**
