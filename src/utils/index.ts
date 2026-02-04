@@ -2,16 +2,6 @@
  * Utility functions for QQ NapCat plugin
  */
 
-import type {
-  NapCatMessageSegment,
-  OpenClawMessageContent,
-  NapCatTextSegment,
-  NapCatAtSegment,
-  NapCatImageSegment,
-  NapCatReplySegment,
-  NapCatFaceSegment,
-} from '../types/index.js';
-
 // =============================================================================
 // ID Generation
 // =============================================================================
