@@ -53,16 +53,62 @@ function parseCQCode(text: string): NapCatMessageSegment[] {
     const paramsStr = match[2];
 
     // Parse key=value pairs
+    // Handle complex values like JSON data that contain commas
     const data: Record<string, string> = {};
-    const paramRegex = /(\w+)=([^,]+)/g;
-    let paramMatch: RegExpExecArray | null;
+    let pos = 0;
 
-    while ((paramMatch = paramRegex.exec(paramsStr)) !== null) {
+    while (pos < paramsStr.length) {
+      // Skip leading commas
+      if (paramsStr[pos] === ',') {
+        pos++;
+        continue;
+      }
+
+      // Match key (alphanumeric + underscore)
+      const keyMatch = paramsStr.slice(pos).match(/^(\w+)=/);
+      if (!keyMatch) break;
+
+      const key = keyMatch[1];
+      pos += keyMatch[0].length;
+
+      // Extract value based on what follows
+      let value = '';
+
+      if (paramsStr[pos] === '{') {
+        // JSON object value - find matching closing brace
+        let depth = 1;
+        let i = pos + 1;
+        while (i < paramsStr.length && depth > 0) {
+          if (paramsStr[i] === '{') depth++;
+          if (paramsStr[i] === '}') depth--;
+          i++;
+        }
+        value = paramsStr.slice(pos, i);
+        pos = i;
+      } else if (paramsStr[pos] === '[') {
+        // JSON array value - find matching closing bracket
+        let depth = 1;
+        let i = pos + 1;
+        while (i < paramsStr.length && depth > 0) {
+          if (paramsStr[i] === '[') depth++;
+          if (paramsStr[i] === ']') depth--;
+          i++;
+        }
+        value = paramsStr.slice(pos, i);
+        pos = i;
+      } else {
+        // Simple value - read until next comma or end
+        const nextComma = paramsStr.indexOf(',', pos);
+        if (nextComma === -1) {
+          value = paramsStr.slice(pos);
+          pos = paramsStr.length;
+        } else {
+          value = paramsStr.slice(pos, nextComma);
+          pos = nextComma;
+        }
+      }
+
       // Decode HTML entities in values (e.g., &amp; -> &)
-      const key = paramMatch[1];
-      let value = paramMatch[2];
-
-      // Decode HTML entities
       value = value
         .replace(/&amp;/g, '&')
         .replace(/&#91;/g, '[')

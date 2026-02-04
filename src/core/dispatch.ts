@@ -27,6 +27,15 @@ function contentToPlainText(content: OpenClawMessageContent[]): string {
       }
       case 'reply':
         return '[回复]';
+      case 'audio': {
+        // Audio/voice messages - include URL if available
+        const label = '[语音]';
+        return c.url ? `${label}(${c.url})` : label;
+      }
+      case 'location': {
+        // Location messages - include address info
+        return c.text || '[位置]';
+      }
       default:
         return '';
     }
