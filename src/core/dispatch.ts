@@ -11,36 +11,60 @@ import { logWarn } from '../utils/index.js';
 /**
  * Convert OpenClaw message content array to plain text
  * For images, includes the URL so AI models can access them
+ * For replies, includes quoted message content if available
  */
-function contentToPlainText(content: OpenClawMessageContent[]): string {
-  return content.map((c) => {
-    switch (c.type) {
-      case 'text':
-        return c.text;
-      case 'at':
-        return c.isAll ? '@全体成员' : `@${c.userId}`;
-      case 'image': {
-        // Include image URL so AI models can access the image
-        // Use summary if available (e.g., "[动画表情]" for animated stickers)
-        const label = c.summary || '[图片]';
-        return c.url ? `${label}(${c.url})` : label;
-      }
-      case 'reply':
-        return '[回复]';
-      case 'audio': {
-        // Audio/voice messages - include URL if available
-        const label = '[语音]';
-        return c.url ? `${label}(${c.url})` : label;
-      }
-      case 'json': {
-        // JSON messages - format as markdown code block
-        const header = c.prompt || '[JSON]';
-        return `${header}\n\`\`\`json\n${c.data}\n\`\`\``;
-      }
-      default:
-        return '';
+async function contentToPlainText(
+  content: OpenClawMessageContent[],
+  rawMessage: string,
+  connection?: NapCatConnection
+): Promise<string> {
+  // Check if this message contains a reply segment
+  const hasReply = content.some(c => c.type === 'reply');
+
+  let quotedMessageText: string | null = null;
+  if (hasReply && connection) {
+    // Import parseReplyMessage to fetch quoted message
+    const { parseReplyMessage } = await import('../adapters/message.js');
+    const result = await parseReplyMessage(rawMessage, connection);
+    if (result.isReply && result.data) {
+      quotedMessageText = `[回复]\n\n## 引用消息\n\n${result.data.quotedSenderNickname}: ${result.data.quotedMessage}\n\n## 回复消息\n\n${result.data.replyText}`;
     }
-  }).join('');
+  }
+
+  // If we successfully fetched the quoted message, return it directly
+  if (quotedMessageText) {
+    return quotedMessageText;
+  }
+
+  // Otherwise, fall back to simple text conversion (but skip reply segments)
+  return content
+    .filter(c => c.type !== 'reply')
+    .map((c) => {
+      switch (c.type) {
+        case 'text':
+          return c.text;
+        case 'at':
+          return c.isAll ? '@全体成员' : `@${c.userId}`;
+        case 'image': {
+          // Include image URL so AI models can access the image
+          // Use summary if available (e.g., "[动画表情]" for animated stickers)
+          const label = c.summary || '[图片]';
+          return c.url ? `${label}(${c.url})` : label;
+        }
+        case 'audio': {
+          // Audio/voice messages - include URL if available
+          const label = '[语音]';
+          return c.url ? `${label}(${c.url})` : label;
+        }
+        case 'json': {
+          // JSON messages - format as markdown code block
+          const header = c.prompt || '[JSON]';
+          return `${header}\n\`\`\`json\n${c.data}\n\`\`\``;
+        }
+        default:
+          return '';
+      }
+    }).join('');
 }
 
 /**
@@ -209,6 +233,7 @@ export async function handleGroupMessage(
     group_id: number;
     user_id: number;
     message: Array<{ type: string; data: Record<string, unknown> }>;
+    raw_message: string;
     sender?: {
       nickname?: string;
       card?: string;
@@ -242,8 +267,8 @@ export async function handleGroupMessage(
   // Use async version to fetch file data
   const { content } = await napCatToOpenClawMessageAsync(event.message, botUserId, conn as NapCatConnection);
 
-  // Convert content array to plain text for the message body
-  const plainText = contentToPlainText(content);
+  // Convert content array to plain text for the message body (async to fetch reply data)
+  const plainText = await contentToPlainText(content, event.raw_message, conn as NapCatConnection);
 
   log?.info(`[openclaw-channel-qq:${accountId}] Group message from ${event.sender?.nickname || event.sender?.card || event.user_id}: ${plainText}`);
 
@@ -273,6 +298,7 @@ export async function handlePrivateMessage(
     message_id: number;
     user_id: number;
     message: Array<{ type: string; data: Record<string, unknown> }>;
+    raw_message: string;
     sender?: {
       nickname?: string;
     };
@@ -303,8 +329,8 @@ export async function handlePrivateMessage(
   // Use async version to fetch file data
   const { content } = await napCatToOpenClawMessageAsync(event.message, undefined, conn as NapCatConnection);
 
-  // Convert content array to plain text for the message body
-  const plainText = contentToPlainText(content);
+  // Convert content array to plain text for the message body (async to fetch reply data)
+  const plainText = await contentToPlainText(content, event.raw_message, conn as NapCatConnection);
 
   log?.info(`[openclaw-channel-qq:${accountId}] Private message from ${event.sender?.nickname || event.user_id}: ${plainText}`);
 

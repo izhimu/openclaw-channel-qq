@@ -510,6 +510,7 @@ async function handleNapCatEvent(accountId: string, event: {
   group_id?: number;
   user_id: number;
   message?: Array<{ type: string; data: Record<string, unknown> }>;
+  raw_message?: string;
   sender?: {
     nickname?: string;
     card?: string;
@@ -544,6 +545,7 @@ async function handleNapCatEvent(accountId: string, event: {
           group_id: event.group_id,
           user_id: event.user_id,
           message: event.message ?? [],
+          raw_message: event.raw_message ?? '',
           sender: event.sender,
         }, { account, cfg, log }, connectionManager);
       } else if (event.message_type === "private") {
@@ -553,6 +555,7 @@ async function handleNapCatEvent(accountId: string, event: {
           message_id: event.message_id ?? 0,
           user_id: event.user_id,
           message: event.message ?? [],
+          raw_message: event.raw_message ?? '',
           sender: event.sender,
         }, { account, cfg, log }, connectionManager);
       }
