@@ -178,6 +178,17 @@ export const qqNapCatPlugin: ChannelPlugin<AccountConfig> = {
           });
         }
 
+        // Update lastOutboundAt timestamp on successful send
+        if (response.status === "ok") {
+          const gatewayCtx = gatewayContexts.get(accountId);
+          if (gatewayCtx) {
+            gatewayCtx.setStatus({
+              ...gatewayCtx.getStatus(),
+              lastOutboundAt: Date.now(),
+            });
+          }
+        }
+
         if (response.status === "ok" && response.data) {
           const data = response.data as { message_id: number };
           return {
@@ -272,6 +283,17 @@ export const qqNapCatPlugin: ChannelPlugin<AccountConfig> = {
           });
         }
 
+        // Update lastOutboundAt timestamp on successful send
+        if (response.status === "ok") {
+          const gatewayCtx = gatewayContexts.get(accountId);
+          if (gatewayCtx) {
+            gatewayCtx.setStatus({
+              ...gatewayCtx.getStatus(),
+              lastOutboundAt: Date.now(),
+            });
+          }
+        }
+
         if (response.status === "ok" && response.data) {
           const data = response.data as { message_id: number };
           return {
@@ -305,6 +327,12 @@ export const qqNapCatPlugin: ChannelPlugin<AccountConfig> = {
 
       log?.info(`[openclaw-channel-qq:${account.accountId}] Starting gateway`);
 
+      // Update start time
+      ctx.setStatus({
+        ...ctx.getStatus(),
+        lastStartAt: Date.now(),
+      });
+
       // Store runtime context
       gatewayContexts.set(account.accountId, ctx);
 
@@ -320,6 +348,13 @@ export const qqNapCatPlugin: ChannelPlugin<AccountConfig> = {
             running: true,
             connected: true,
             lastConnectedAt: Date.now(),
+          });
+        } else if (status.state === "disconnected" || status.state === "failed") {
+          ctx.setStatus({
+            ...ctx.getStatus(),
+            running: false,
+            connected: false,
+            lastError: status.error,
           });
         }
       });
@@ -342,6 +377,13 @@ export const qqNapCatPlugin: ChannelPlugin<AccountConfig> = {
       if (conn) {
         await conn.stop();
       }
+      // Update running state
+      ctx.setStatus({
+        ...ctx.getStatus(),
+        running: false,
+        connected: false,
+        lastStopAt: Date.now(),
+      });
       gatewayContexts.delete(account.accountId);
     },
   },
@@ -353,6 +395,11 @@ export const qqNapCatPlugin: ChannelPlugin<AccountConfig> = {
       connected: false,
       lastConnectedAt: null,
       reconnectAttempts: 0,
+      lastInboundAt: null,
+      lastOutboundAt: null,
+      lastStartAt: null,
+      lastStopAt: null,
+      lastError: null,
     },
     probeAccount: async ({ account, cfg: _cfg }: { account: AccountConfig; cfg: unknown }) => {
       const conn = connectionManager?.getConnection(account.accountId);
@@ -384,7 +431,7 @@ export const qqNapCatPlugin: ChannelPlugin<AccountConfig> = {
         };
       }
     },
-    buildAccountSnapshot: ({ account, runtime }: { account: AccountConfig; runtime?: { running?: boolean; connected?: boolean; lastConnectedAt?: number | null; reconnectAttempts?: number } }) => {
+    buildAccountSnapshot: ({ account, runtime }: { account: AccountConfig; runtime?: { running?: boolean; connected?: boolean; lastConnectedAt?: number | null; reconnectAttempts?: number; lastInboundAt?: number | null; lastOutboundAt?: number | null; lastStartAt?: number | null; lastStopAt?: number | null; lastError?: string | null } }) => {
       const conn = connectionManager?.getConnection(account.accountId);
       const stats = conn?.getStats();
 
@@ -397,6 +444,11 @@ export const qqNapCatPlugin: ChannelPlugin<AccountConfig> = {
         connected: runtime?.connected ?? false,
         lastConnectedAt: runtime?.lastConnectedAt ?? null,
         reconnectAttempts: stats?.totalReconnectAttempts ?? runtime?.reconnectAttempts ?? 0,
+        lastInboundAt: runtime?.lastInboundAt ?? null,
+        lastOutboundAt: runtime?.lastOutboundAt ?? null,
+        lastStartAt: runtime?.lastStartAt ?? null,
+        lastStopAt: runtime?.lastStopAt ?? null,
+        lastError: runtime?.lastError ?? null,
       };
     },
   },
@@ -435,6 +487,12 @@ async function handleNapCatEvent(accountId: string, event: {
   // NapCat/OneBot 11 uses post_type: "message" with message_type: "private" or "group"
   switch (event.post_type) {
     case "message":
+      // Update lastInboundAt timestamp
+      ctx.setStatus({
+        ...ctx.getStatus(),
+        lastInboundAt: Date.now(),
+      });
+
       if (event.message_type === "group" && event.group_id) {
         await handleGroupMessage(accountId, {
           time: event.time,
