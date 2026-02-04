@@ -187,6 +187,7 @@ export type NapCatMessageSegment =
   | NapCatPokeSegment
   | NapCatRecordSegment
   | NapCatVideoSegment
+  | NapCatFileSegment
   | NapCatXmlSegment
   | NapCatJsonSegment
   | NapCardImageSegment
@@ -258,6 +259,16 @@ export interface NapCatVideoSegment {
   data: {
     file: string;
     url?: string;
+  };
+}
+
+export interface NapCatFileSegment {
+  type: 'file';
+  data: {
+    file: string;
+    url?: string;
+    file_id?: string;
+    file_size?: string;
   };
 }
 

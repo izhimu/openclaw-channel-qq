@@ -10,6 +10,7 @@ import type {
   NapCatReplySegment,
   NapCatFaceSegment,
   NapCatPokeSegment,
+  NapCatFileSegment,
   OpenClawMessageContent,
   OpenClawTextContent,
   OpenClawAtContent,
@@ -178,6 +179,13 @@ function isPokeSegment(segment: NapCatMessageSegment): segment is NapCatPokeSegm
 }
 
 /**
+ * Type guard for file segment
+ */
+function isFileSegment(segment: NapCatMessageSegment): segment is NapCatFileSegment {
+  return segment.type === 'file';
+}
+
+/**
  * Convert a single NapCat segment to OpenClaw format
  */
 function napCatSegmentToOpenClaw(
@@ -202,6 +210,9 @@ function napCatSegmentToOpenClaw(
 
     case 'poke':
       return isPokeSegment(segment) ? napCatPokeToOpenClaw(segment) : null;
+
+    case 'file':
+      return isFileSegment(segment) ? napCatFileToOpenClaw(segment) : null;
 
     case 'record':
     case 'video':
@@ -287,6 +298,24 @@ function napCatPokeToOpenClaw(_segment: NapCatPokeSegment): OpenClawTextContent 
     type: 'text',
     text: '[戳一戳]',
   };
+}
+
+function napCatFileToOpenClaw(segment: NapCatFileSegment): OpenClawTextContent {
+  const fileName = segment.data.file || 'unknown';
+  const fileSize = segment.data.file_size;
+  const sizeText = fileSize ? ` (${formatFileSize(fileSize)})` : '';
+  return {
+    type: 'text',
+    text: `[文件] ${fileName}${sizeText}`,
+  };
+}
+
+function formatFileSize(size: string | number): string {
+  const num = typeof size === 'string' ? parseInt(size, 10) : size;
+  if (isNaN(num)) return '';
+  if (num < 1024) return `${num}B`;
+  if (num < 1024 * 1024) return `${(num / 1024).toFixed(1)}KB`;
+  return `${(num / (1024 * 1024)).toFixed(1)}MB`;
 }
 
 // =============================================================================
@@ -469,6 +498,16 @@ export function extractPlainTextFromSegments(segments: NapCatMessageSegment[]): 
         break;
       case 'poke':
         parts.push('[戳一戳]');
+        break;
+      case 'file':
+        if (isFileSegment(segment)) {
+          const fileName = segment.data.file || 'unknown';
+          const fileSize = segment.data.file_size;
+          const sizeText = fileSize ? ` (${formatFileSize(fileSize)})` : '';
+          parts.push(`[文件] ${fileName}${sizeText}`);
+        } else {
+          parts.push('[文件]');
+        }
         break;
       default:
         parts.push(`[${segment.type}]`);
