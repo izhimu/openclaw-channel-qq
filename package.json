@@ -1,6 +1,6 @@
 {
   "name": "openclaw-channel-qq",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "A QQ channel plugin for OpenClaw using NapCat WebSocket",
   "main": "index.ts",
   "type": "module",

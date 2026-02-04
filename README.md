@@ -7,10 +7,12 @@ A QQ channel plugin for [OpenClaw](https://docs.openclaw.ai/) using the [NapCat]
 - **Multi-Account Support** - Connect and manage multiple QQ bot accounts simultaneously
 - **Chat Types** - Supports both direct (private) and group messages
 - **Message Types** - Text, @mentions, images, faces, and message replies
+- **Typing Indicator** - Shows "typing..." status in private chats when bot is generating responses
 - **Event Handling** - Message events, notice events (pokes), and meta events
 - **Auto-Reconnect** - Automatic reconnection with exponential backoff
 - **Heartbeat** - Keep-alive ping/pong for connection health monitoring
 - **Interactive Setup** - CLI wizard for easy configuration
+- **Control UI Support** - Native integration with OpenClaw's configuration UI
 
 ## Prerequisites
 
@@ -198,12 +200,22 @@ npm run dev
 openclaw-channel-qq/
 ├── src/
 │   ├── index.ts         # Main plugin definition
-│   ├── connection.ts    # WebSocket connection manager
-│   ├── adapters.ts      # NapCat ↔ OpenClaw message conversion
-│   ├── config.ts        # Configuration resolution
+│   ├── core/
+│   │   ├── connection.ts    # WebSocket connection manager
+│   │   └── dispatch.ts      # Event dispatcher
+│   ├── adapters/
+│   │   └── message.ts       # NapCat ↔ OpenClaw message conversion
+│   ├── core/
+│   │   └── config.ts        # Configuration resolution
 │   ├── onboarding.ts    # Interactive setup wizard
-│   ├── types.ts         # TypeScript definitions
-│   └── utils.ts         # Utility functions
+│   ├── types/
+│   │   └── index.ts        # TypeScript definitions
+│   └── utils/
+│       ├── index.ts        # Utility functions
+│       └── typing.ts       # Typing indicator utilities
+├── docs/
+│   ├── napcat-websocket-api.md  # NapCat API reference
+│   └── plugin-development-guide.md
 ├── index.ts             # Plugin entry point
 ├── openclaw.plugin.json # Plugin manifest
 └── package.json
@@ -222,6 +234,11 @@ openclaw-channel-qq/
 1. Ensure the account is `enabled: true`
 2. Check OpenClaw logs: `openclaw logs`
 3. Verify NapCat is sending events (check NapCat logs)
+
+## Documentation
+
+- [NapCat WebSocket API Reference](./docs/napcat-websocket-api.md) - Complete API documentation for NapCat integration
+- [Plugin Development Guide](./docs/plugin-development-guide.md) - Guide for extending the plugin
 
 ## Links
 
