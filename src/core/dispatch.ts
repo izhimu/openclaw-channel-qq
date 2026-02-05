@@ -196,7 +196,7 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
         responsePrefix: messagesConfig.responsePrefix,
         deliver: async (payload: ReplyPayload, info: { kind: string }): Promise<void> => {
           hasResponse = true;
-          log.info('dispatch', `deliver(${info.kind}): ${payload}`);
+          log.info('dispatch', `deliver(${info.kind}): ${JSON.stringify(payload)}`);
           if (payload.text) {
             await sendReply(payload.text);
           }
