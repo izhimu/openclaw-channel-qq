@@ -59,7 +59,7 @@ openclaw/
 │   │   ├── src/
 │   │   │   ├── channel.ts
 │   │   │   └── runtime.ts
-│   │   ├── index.ts
+│   │   ├── channel.ts
 │   │   ├── openclaw.plugin.json  (optional)
 │   │   └── package.json
 │   ├── telegram/
@@ -87,7 +87,7 @@ openclaw/
     "openclaw": "workspace:*"
   },
   "openclaw": {
-    "extensions": ["./index.ts"]
+    "extensions": ["./channel.ts"]
   }
 }
 ```
@@ -126,7 +126,7 @@ extensions/my-channel/
 │   ├── runtime.ts      # Platform-specific runtime (optional)
 │   ├── providers/      # Provider implementations (optional)
 │   └── types.ts        # Type definitions (optional)
-├── index.ts            # Plugin entry point
+├── channel.ts            # Plugin entry point
 ├── package.json
 └── README.md
 ```
@@ -276,7 +276,7 @@ export const myChannelPlugin: ChannelPlugin<MyChannelAccount> = {
 ```
 
 ```typescript
-// extensions/my-channel/index.ts
+// extensions/my-channel/channel.ts
 import { myChannelPlugin } from "./src/channel.js";
 
 export default {
@@ -1222,7 +1222,7 @@ export const simpleBotPlugin: ChannelPlugin<SimpleBotAccount> = {
 ```
 
 ```typescript
-// extensions/simplebot/index.ts
+// extensions/simplebot/channel.ts
 import { simpleBotPlugin } from "./src/channel.js";
 
 export default {
@@ -1246,7 +1246,7 @@ export default {
     "openclaw": "workspace:*"
   },
   "openclaw": {
-    "extensions": ["./index.ts"]
+    "extensions": ["./channel.ts"]
   }
 }
 ```
@@ -1416,7 +1416,7 @@ export const voiceChannelPlugin: ChannelPlugin<VoiceChannelAccount> = {
 ### Example 3: Plugin with Custom Tools
 
 ```typescript
-// extensions/weather-tools/index.ts
+// extensions/weather-tools/channel.ts
 import { Type } from "@sinclair/typebox";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 
@@ -1604,7 +1604,7 @@ pnpm link --global @openclaw/my-channel
 - **Official Docs**: https://docs.openclaw.ai/plugin
 - **Core Plugins**: Check `extensions/` directory for examples
 - **Built-in Channels**: Check `src/channels/` for core implementations
-- **Plugin SDK**: Check `src/plugin-sdk/index.ts` for all exports
+- **Plugin SDK**: Check `src/plugin-sdk/channel.ts` for all exports
 
 ---
 
@@ -1613,7 +1613,7 @@ pnpm link --global @openclaw/my-channel
 ### Plugin Not Loading
 
 - Check `package.json` has correct `openclaw.extensions` entry
-- Verify `index.ts` exports a default plugin object
+- Verify `channel.ts` exports a default plugin object
 - Ensure dependencies are in `dependencies`, not `devDependencies`
 
 ### Runtime Errors

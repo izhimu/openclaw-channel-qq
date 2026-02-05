@@ -5,7 +5,7 @@
 
 import type { ConnectionManager } from '../core/connection.js';
 import type { InputStatusEventType } from '../types/index.js';
-import { logDebug, logWarn } from './index.js';
+import { Logger as log } from './index.js';
 
 /**
  * Send typing status to a user (fire-and-forget)
@@ -22,7 +22,7 @@ export async function sendTypingStatus(
 ): Promise<void> {
   try {
     if (!conn.isConnected()) {
-      logDebug('typing', `Not connected, skipping typing status for user ${userId}`);
+      log.debug('typing', `Not connected, skipping typing status for user ${userId}`);
       return;
     }
 
@@ -31,11 +31,11 @@ export async function sendTypingStatus(
       event_type: eventType,
     });
 
-    logDebug('typing', `Sent typing status ${eventType} to user ${userId}`);
+    log.debug('typing', `Sent typing status ${eventType} to user ${userId}`);
   } catch (error) {
     // Fire-and-forget: log but don't throw
     const message = error instanceof Error ? error.message : String(error);
-    logWarn('typing', `Failed to send typing status to user ${userId}: ${message}`);
+    log.warn('typing', `Failed to send typing status to user ${userId}: ${message}`);
   }
 }
 

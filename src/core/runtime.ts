@@ -7,13 +7,13 @@ import type { PluginRuntime } from "openclaw/plugin-sdk";
 
 let runtime: PluginRuntime | null = null;
 
-export function setNapCatRuntime(next: PluginRuntime): void {
+export function setQQRuntime(next: PluginRuntime): void {
   runtime = next;
 }
 
-export function getNapCatRuntime(): PluginRuntime {
+export function getQQRuntime(): PluginRuntime {
   if (!runtime) {
-    throw new Error("NapCat runtime not initialized");
+    throw new Error("QQ runtime not initialized");
   }
   return runtime;
 }

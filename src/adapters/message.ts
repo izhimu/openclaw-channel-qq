@@ -11,10 +11,10 @@ import type {
   OpenClawMessageContent,
   OpenClawJsonContent,
   GetMsgData,
-  GetMsgResponse,
 } from '../types/index.js';
-import { logWarn, extractImageUrl, getEmojiForFaceId } from '../utils/index.js';
+import { Logger as log, extractImageUrl, getEmojiForFaceId } from '../utils/index.js';
 import { CQCodeUtils, type CQNode } from '../utils/cqcode.js';
+import type { ConnectionManager } from "../core/connection.js";
 
 // =============================================================================
 // CQ Code Parsing
@@ -46,7 +46,7 @@ function normalizeMessageSegments(message: NapCatMessageSegment[] | string): Nap
     return parseCQCode(message);
   }
   if (!Array.isArray(message)) {
-    logWarn('adapters', `Invalid message format: ${typeof message}`);
+    log.warn('adapters', `Invalid message format: ${typeof message}`);
     return [{ type: 'text', data: { text: String(message) } }];
   }
   return message;
@@ -86,13 +86,13 @@ function parseJsonSegment(segment: NapCatJsonSegment): OpenClawJsonContent | Ope
     };
 
     // Only add prompt if it's a non-empty string
-    if (jsonData?.prompt && typeof jsonData.prompt === 'string' && jsonData.prompt.trim() !== '') {
+    if (jsonData?.prompt && jsonData.prompt.trim() !== '') {
       result.prompt = jsonData.prompt;
     }
 
     return result;
   } catch (error) {
-    logWarn('adapters', `Failed to parse JSON message: ${error}`);
+    log.warn('adapters', `Failed to parse JSON message: ${error}`);
     return null;
   }
 }
@@ -147,7 +147,6 @@ function formatFileInfo(segment: NapCatFileSegment): string {
  */
 function napCatSegmentToOpenClaw(
   segment: NapCatMessageSegment,
-  botUserId?: number
 ): OpenClawMessageContent | null {
   const data = segment.data as Record<string, unknown>;
 
@@ -181,12 +180,12 @@ function napCatSegmentToOpenClaw(
     case 'record':
       return data.path
         ? {
-            type: 'audio',
-            path: String(data.path),
-            file: String(data.file || ''),
-            url: data.url as string | undefined,
-            fileSize: data.file_size ? parseInt(String(data.file_size), 10) : undefined,
-          }
+          type: 'audio',
+          path: String(data.path),
+          file: String(data.file || ''),
+          url: data.url as string | undefined,
+          fileSize: data.file_size ? parseInt(String(data.file_size), 10) : undefined,
+        }
         : { type: 'text', text: '[语音]' };
 
     case 'file':
@@ -196,58 +195,22 @@ function napCatSegmentToOpenClaw(
       return parseJsonSegment(segment as NapCatJsonSegment);
 
     case 'video':
-      logWarn('adapters', `Unsupported message type (inbound): ${segment.type}`);
+      log.warn('adapters', `Unsupported message type (inbound): ${segment.type}`);
       return { type: 'text', text: `[${segment.type}消息]` };
 
     case 'xml':
-      logWarn('adapters', `Unsupported message type (inbound): ${segment.type}`);
+      log.warn('adapters', `Unsupported message type (inbound): ${segment.type}`);
       return null;
 
     default:
-      logWarn('adapters', `Unknown message type (inbound): ${segment.type}`);
+      log.warn('adapters', `Unknown message type (inbound): ${segment.type}`);
       return null;
   }
-}
-
-/**
- * Convert NapCat message segments to OpenClaw message content
- */
-export function napCatToOpenClawMessage(
-  segments: NapCatMessageSegment[] | string,
-  botUserId?: number
-): { content: OpenClawMessageContent[]; isMention: boolean } {
-  const content: OpenClawMessageContent[] = [];
-  let isMention = false;
-
-  const normalizedSegments = normalizeMessageSegments(segments);
-
-  for (const segment of normalizedSegments) {
-    const result = napCatSegmentToOpenClaw(segment, botUserId);
-    if (result) {
-      content.push(result);
-      if (result.type === 'at' && botUserId && result.userId === String(botUserId)) {
-        isMention = true;
-      }
-    }
-  }
-
-  return { content, isMention };
 }
 
 // =============================================================================
 // Async File Enrichment
 // =============================================================================
-
-/**
- * Connection interface for async operations
- */
-export interface NapCatConnection {
-  sendRequest: <T>(action: string, params?: Record<string, unknown>) => Promise<{
-    status: string;
-    msg?: string;
-    data?: T;
-  }>;
-}
 
 interface GetFileData {
   file?: string;
@@ -262,7 +225,7 @@ interface GetFileData {
  */
 async function enrichFileSegments(
   segments: NapCatMessageSegment[],
-  connection?: NapCatConnection
+  connection?: ConnectionManager
 ): Promise<NapCatMessageSegment[]> {
   if (!connection) return segments;
 
@@ -289,7 +252,7 @@ async function enrichFileSegments(
         (segment.data as any).base64 = response.data.base64;
       }
     } catch (error) {
-      logWarn('adapters', `Failed to fetch file data for ${fileId}: ${error}`);
+      log.warn('adapters', `Failed to fetch file data for ${fileId}: ${error}`);
     }
   }
 
@@ -302,8 +265,7 @@ async function enrichFileSegments(
  */
 export async function napCatToOpenClawMessageAsync(
   segments: NapCatMessageSegment[] | string,
-  botUserId?: number,
-  connection?: NapCatConnection
+  connection?: ConnectionManager
 ): Promise<{ content: OpenClawMessageContent[]; isMention: boolean }> {
   const normalizedSegments = normalizeMessageSegments(segments);
   const enrichedSegments = await enrichFileSegments(normalizedSegments, connection);
@@ -312,12 +274,9 @@ export async function napCatToOpenClawMessageAsync(
   let isMention = false;
 
   for (const segment of enrichedSegments) {
-    const result = napCatSegmentToOpenClaw(segment, botUserId);
+    const result = napCatSegmentToOpenClaw(segment);
     if (result) {
       content.push(result);
-      if (result.type === 'at' && botUserId && result.userId === String(botUserId)) {
-        isMention = true;
-      }
     }
   }
 
@@ -349,11 +308,11 @@ function openClawSegmentToNapCat(
 
     case 'audio':
       // These types are inbound-only for now
-      logWarn('adapters', `Unsupported outbound type: ${content.type}`);
+      log.warn('adapters', `Unsupported outbound type: ${content.type}`);
       return null;
 
     default:
-      logWarn('adapters', `Unknown content type (outbound): ${(content as { type: string }).type}`);
+      log.warn('adapters', `Unknown content type (outbound): ${(content as { type: string }).type}`);
       return null;
   }
 }
@@ -420,57 +379,6 @@ export function extractPlainTextFromSegments(segments: NapCatMessageSegment[]): 
     .join('');
 }
 
-/**
- * Check if a message contains only text (no special formatting)
- */
-export function isPlainTextMessage(segments: NapCatMessageSegment[]): boolean {
-  return segments.length === 1 && segments[0].type === 'text';
-}
-
-/**
- * Get message summary for logging
- */
-export function getMessageSummary(segments: NapCatMessageSegment[], maxLength = 50): string {
-  const text = extractPlainTextFromSegments(segments);
-  return text.length > maxLength ? text.slice(0, maxLength) + '...' : text;
-}
-
-// =============================================================================
-// Special Message Type Handling
-// =============================================================================
-
-/**
- * Handle poke/nudge events
- */
-export interface PokeMessage {
-  type: 'poke';
-  senderId: string;
-  targetId: string;
-  groupId?: string;
-}
-
-export function isPokeEvent(segments: NapCatMessageSegment[]): boolean {
-  return segments.some(s => s.type === 'poke');
-}
-
-export function parsePokeMessage(
-  segments: NapCatMessageSegment[],
-  senderId: string,
-  groupId?: string
-): PokeMessage | null {
-  const poke = segments.find(s => s.type === 'poke');
-  if (!poke || poke.type !== 'poke') return null;
-
-  const data = poke.data as Record<string, unknown>;
-  return {
-    type: 'poke',
-    senderId,
-    targetId: String(data.qq || 'unknown'),
-    groupId,
-  };
-}
-
-
 // =============================================================================
 // Reply Message Parsing
 // =============================================================================
@@ -480,47 +388,6 @@ export function parsePokeMessage(
  */
 export function hasReplySegment(segments: NapCatMessageSegment[]): boolean {
   return segments.some(s => s.type === 'reply');
-}
-
-/**
- * Extract reply message ID from segments
- */
-export function extractReplyMessageId(segments: NapCatMessageSegment[]): string | null {
-  for (const segment of segments) {
-    if (segment.type === 'reply') {
-      const data = segment.data as Record<string, unknown>;
-      return String(data.id || '');
-    }
-  }
-  return null;
-}
-
-/**
- * Extract text content from segments (excluding reply segments)
- */
-export function extractTextExcludingReply(segments: NapCatMessageSegment[]): string {
-  return segments
-    .filter(s => s.type !== 'reply')
-    .map(seg => {
-      const data = seg.data as Record<string, unknown>;
-      switch (seg.type) {
-        case 'text':
-          return String(data.text || '');
-        case 'at':
-          return data.qq === 'all' ? '@全体成员' : `@${data.name || data.qq}`;
-        case 'image':
-          return '[图片]';
-        case 'face':
-          return getEmojiForFaceId(String(data.id || ''));
-        case 'record':
-          return '[语音]';
-        case 'json':
-          return '[JSON]';
-        default:
-          return `[${seg.type}]`;
-      }
-    })
-    .join('');
 }
 
 /**
@@ -569,7 +436,7 @@ export function parseReplySegments(segments: NapCatMessageSegment[]): {
  */
 async function fetchQuotedMessage(
   messageId: string,
-  connection?: NapCatConnection
+  connection?: ConnectionManager
 ): Promise<GetMsgData | null> {
   if (!connection) return null;
 
@@ -582,7 +449,7 @@ async function fetchQuotedMessage(
       return response.data;
     }
   } catch (error) {
-    logWarn('adapters', `Failed to fetch quoted message ${messageId}: ${error}`);
+    log.warn('adapters', `Failed to fetch quoted message ${messageId}: ${error}`);
   }
 
   return null;
@@ -621,7 +488,7 @@ interface ReplyMessageParseResult {
  */
 export async function parseReplyMessage(
   segments: NapCatMessageSegment[] | string,
-  connection?: NapCatConnection
+  connection?: ConnectionManager
 ): Promise<ReplyMessageParseResult> {
   const normalizedSegments = normalizeMessageSegments(segments);
 
@@ -654,7 +521,7 @@ export async function parseReplyMessage(
   }
 
   // Extract quoted message content
-  let quotedContent = '';
+  let quotedContent: string;
   if (typeof quotedMessage.message === 'string') {
     quotedContent = quotedMessage.message;
   } else if (Array.isArray(quotedMessage.message)) {

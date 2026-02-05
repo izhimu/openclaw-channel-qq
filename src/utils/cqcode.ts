@@ -38,7 +38,7 @@ export class CQCodeUtils {
     if (!text) return [];
 
     const nodes: CQNode[] = [];
-    const regex = /\[CQ:([^\]]+)\]/g;
+    const regex = /\[CQ:([^\]]+)]/g;
     
     let lastIndex = 0;
     let match: RegExpExecArray | null;

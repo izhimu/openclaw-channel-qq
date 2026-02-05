@@ -29,6 +29,7 @@ export type NapCatAction =
   | 'send_msg'
   | 'get_msg'
   | 'get_status'
+  | 'get_file'
   | 'set_input_status';
 
 // =============================================================================
@@ -49,58 +50,6 @@ export type NapCatPostType =
   | 'notice'
   | 'request'
   | 'meta_event';
-
-// Notice Events
-export interface NapCatNoticeEvent extends NapCatEvent {
-  post_type: 'notice';
-  notice_type: NapCatNoticeType;
-}
-
-export type NapCatNoticeType =
-  | 'friend_add'
-  | 'group_add'
-  | 'group_delete'
-  | 'group_admin'
-  | 'group_ban'
-  | 'group_increase'
-  | 'group_decrease'
-  | 'group_upload'
-  | 'friend_recall'
-  | 'group_recall'
-  | 'notify'
-  | 'poke'
-  | 'lifecycle'
-  | 'essence';
-
-export interface NapCatPokeEvent extends NapCatNoticeEvent {
-  notice_type: 'poke';
-  user_id: number;
-  target_id: number;
-  group_id?: number;
-  sender_id: number;
-}
-
-// Raw info item in notify events
-export interface NapCatRawInfoItem {
-  type: string;
-  col?: string;
-  nm?: string;
-  uid?: string;
-  jp?: string;
-  src?: string;
-  txt?: string;
-  tp?: string;
-}
-
-export interface NapCatNotifyEvent extends NapCatNoticeEvent {
-  notice_type: 'notify';
-  sub_type: 'poke' | 'lucky_king' | 'honor' | string;
-  user_id: number;
-  target_id: number;
-  group_id?: number;
-  sender_id: number;
-  raw_info?: NapCatRawInfoItem[];
-}
 
 // Meta Events
 export interface NapCatMetaEvent extends NapCatEvent {
@@ -206,36 +155,13 @@ export interface NapCatUnknownSegment {
 }
 
 // =============================================================================
-// Sender Information
-// =============================================================================
-
-export interface NapCatSender {
-  user_id: number;
-  nickname: string;
-  card?: string;
-  sex?: 'male' | 'female' | 'unknown';
-  age?: number;
-  area?: string;
-  level?: string;
-  role?: 'owner' | 'admin' | 'member';
-  title?: string;
-}
-
-// =============================================================================
 // Plugin Config Types
 // =============================================================================
 
-export interface PluginConfig {
-  accounts: Record<string, AccountConfig>;
-}
-
-export interface AccountConfig {
-  accountId: string;
-  name?: string;
+export interface QQConfig {
   wsUrl: string;
   accessToken?: string;
-  enabled?: boolean;
-  botUserId?: number;
+  enabled: boolean;
 }
 
 // =============================================================================
@@ -249,7 +175,6 @@ export type ConnectionState =
   | 'failed';
 
 export interface ConnectionStatus {
-  accountId: string;
   state: ConnectionState;
   lastConnected?: number;
   lastAttempted?: number;
@@ -260,20 +185,6 @@ export interface ConnectionStatus {
 // =============================================================================
 // OpenClaw Message Types (for integration)
 // =============================================================================
-
-export interface OpenClawMessage {
-  id: string;
-  channelId: string;
-  accountId: string;
-  chatId: string;
-  chatType: 'direct' | 'group';
-  content: OpenClawMessageContent[];
-  senderId: string;
-  senderName?: string;
-  timestamp: number;
-  isMention?: boolean;
-  replyTo?: string;
-}
 
 export interface OpenClawTextContent {
   type: 'text';
@@ -334,10 +245,6 @@ export type OpenClawMessageContent =
 // Utility Types
 // =============================================================================
 
-export type DeepPartial<T> = {
-  [P in keyof T]?: T[P] extends object ? DeepPartial<T[P]> : T[P];
-};
-
 export interface PendingRequest {
   resolve: (response: NapCatResponse) => void;
   reject: (error: Error) => void;
@@ -365,41 +272,6 @@ export interface OutboundDeliveryResult {
 }
 
 /**
- * Channel gateway context passed to startAccount/stopAccount
- */
-export interface ChannelGatewayContext<TAccountConfig> {
-  /** Account configuration */
-  account: TAccountConfig;
-  /** Full configuration */
-  cfg: unknown;
-  /** Logger instance */
-  log?: {
-    debug: (message: string, ...args: unknown[]) => void;
-    info: (message: string, ...args: unknown[]) => void;
-    warn: (message: string, ...args: unknown[]) => void;
-    error: (message: string, ...args: unknown[]) => void;
-  };
-  /** Get current runtime status */
-  getStatus: () => ChannelRuntimeStatus;
-  /** Set runtime status */
-  setStatus: (status: ChannelRuntimeStatus) => void;
-}
-
-/**
- * Runtime status for a channel account
- */
-export interface ChannelRuntimeStatus {
-  accountId: string;
-  running: boolean;
-  connected: boolean;
-  healthy?: boolean;
-  lastConnectedAt: number | null;
-  lastError: string | null;
-  uptime?: number;
-  reconnectCount?: number;
-}
-
-/**
  * Health status for connection
  */
 export interface HealthStatus {
@@ -408,18 +280,6 @@ export interface HealthStatus {
   latencyMs?: number;
   consecutiveFailures: number;
 }
-
-// =============================================================================
-// Directory Adapter Types
-// =============================================================================
-
-// =============================================================================
-// Heartbeat Event Status
-// =============================================================================
-
-// =============================================================================
-// get_msg API Response Types
-// =============================================================================
 
 /**
  * Sender information in get_msg response
@@ -451,49 +311,4 @@ export interface GetMsgData {
   post_type: string;
   group_id?: number;
   emoji_likes_list?: unknown[];
-}
-
-/**
- * Full response from get_msg API
- */
-export interface GetMsgResponse {
-  status: 'ok' | 'failed';
-  retcode: number;
-  data: GetMsgData;
-  message: string;
-  wording: string;
-  echo?: string;
-  stream?: string;
-}
-
-// =============================================================================
-// set_input_status API Types
-// =============================================================================
-
-/**
- * Event types for set_input_status API
- * 1 = typing, 2 = stopped typing
- */
-export type InputStatusEventType = 1 | 2;
-
-/**
- * Parameters for set_input_status API request
- */
-export interface SetInputStatusParams {
-  /** QQ user ID (as string, per NapCat API spec) */
-  user_id: string;
-  /** Event type: 1 = typing, 2 = stopped typing */
-  event_type: InputStatusEventType;
-}
-
-/**
- * Response from set_input_status API
- */
-export interface SetInputStatusResponse {
-  status: 'ok' | 'failed';
-  retcode: number;
-  data: Record<string, never>;
-  msg: string;
-  wording: string;
-  echo?: string;
 }

@@ -3,10 +3,11 @@
  * Handles routing and dispatching incoming messages to the AI
  */
 
-import type { AccountConfig, OpenClawMessageContent } from '../types/index.js';
+import type { QQConfig, OpenClawMessageContent } from '../types/index.js';
 import type { ConnectionManager } from './connection.js';
-import { napCatToOpenClawMessageAsync, type NapCatConnection } from '../adapters/message.js';
-import { logWarn, sendTypingIndicator, sendStoppedTyping } from '../utils/index.js';
+import { napCatToOpenClawMessageAsync } from '../adapters/message.js';
+import { Logger as log, sendTypingIndicator, sendStoppedTyping } from '../utils/index.js';
+import { OpenClawConfig } from "openclaw/plugin-sdk";
 
 /**
  * Format text for multi-line quote block by prefixing each line with ">"
@@ -24,7 +25,7 @@ function formatQuoteBlock(text: string): string {
 async function contentToPlainText(
   content: OpenClawMessageContent[],
   rawMessage: string,
-  connection?: NapCatConnection
+  connection?: ConnectionManager
 ): Promise<string> {
   // Check if this message contains a reply segment
   const hasReply = content.some(c => c.type === 'reply');
@@ -80,14 +81,7 @@ async function contentToPlainText(
  * Message dispatch parameters
  */
 export interface DispatchMessageParams {
-  accountId: string;
-  cfg: unknown;
-  log?: {
-    debug: (message: string, ...args: unknown[]) => void;
-    info: (message: string, ...args: unknown[]) => void;
-    warn: (message: string, ...args: unknown[]) => void;
-    error: (message: string, ...args: unknown[]) => void;
-  };
+  cfg: OpenClawConfig;
   chatType: 'direct' | 'group';
   chatId: string;
   senderId: string;
@@ -102,14 +96,14 @@ export interface DispatchMessageParams {
  * Dispatch an incoming message to the AI for processing
  */
 export async function dispatchMessage(params: DispatchMessageParams): Promise<void> {
-  const { accountId, cfg, log, chatType, chatId, senderId, senderName, messageId, content, timestamp, conn } = params;
+  const { cfg, chatType, chatId, senderId, senderName, messageId, content, timestamp, conn } = params;
 
   // Import here to avoid circular dependency
-  const { getNapCatRuntime } = await import('./runtime.js');
-  const pluginRuntime = getNapCatRuntime();
+  const { getQQRuntime } = await import('./runtime.js');
+  const pluginRuntime = getQQRuntime();
 
   if (!pluginRuntime) {
-    logWarn('dispatch', `Plugin runtime not available for account ${accountId}`);
+    log.warn('dispatch', `Plugin runtime not available`);
     return;
   }
 
@@ -119,31 +113,24 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
   // Send typing indicator for private messages only (API requires user_id)
   let typingIndicatorSent = false;
   if (!isGroup) {
-    await sendTypingIndicator(conn, senderId).catch(() => {
-      // Silently ignore errors - typing indicator is optional
-    });
+    await sendTypingIndicator(conn, senderId);
     typingIndicatorSent = true;
   }
 
-  // Resolve agent route
   const route = pluginRuntime.channel.routing.resolveAgentRoute({
-    cfg: cfg as any,
-    channel: 'openclaw-channel-qq',
-    accountId,
+    cfg,
+    channel: 'qq',
     peer: {
       kind: isGroup ? 'group' : 'dm',
       id: peerId,
     },
   });
-
-  const envelopeOptions = pluginRuntime.channel.reply.resolveEnvelopeFormatOptions(cfg as any);
-
-  // Format inbound message
+  const envelopeOptions = pluginRuntime.channel.reply.resolveEnvelopeFormatOptions(cfg);
   const body = pluginRuntime.channel.reply.formatInboundEnvelope({
-    channel: 'QQ',
+    channel: 'qq',
     from: senderName || senderId,
-    timestamp,
     body: content,
+    timestamp,
     chatType: isGroup ? 'group' : 'direct',
     sender: {
       id: senderId,
@@ -151,10 +138,8 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
     },
     envelope: envelopeOptions,
   });
-
-  const fromAddress = isGroup ? `openclaw-channel-qq:group:${chatId}` : `openclaw-channel-qq:private:${senderId}`;
+  const fromAddress = isGroup ? `qq:group:${chatId}` : `qq:private:${senderId}`;
   const toAddress = fromAddress;
-
   const ctxPayload = pluginRuntime.channel.reply.finalizeInboundContext({
     Body: body,
     RawBody: content,
@@ -166,15 +151,15 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
     ChatType: isGroup ? 'group' : 'direct',
     SenderId: senderId,
     SenderName: senderName,
-    Provider: 'openclaw-channel-qq',
-    Surface: 'openclaw-channel-qq',
+    Provider: 'qq',
+    Surface: 'qq',
     MessageSid: messageId,
     Timestamp: timestamp,
-    OriginatingChannel: 'openclaw-channel-qq',
+    OriginatingChannel: 'qq',
     OriginatingTo: toAddress,
   });
 
-  log?.info(`[openclaw-channel-qq:${accountId}] Dispatching to agent ${route.agentId}, session: ${route.sessionKey}`);
+  log.info('dispatch', `Dispatching to agent ${route.agentId}, session: ${route.sessionKey}`);
 
   // Send function for delivering replies
   const sendReply = async (text: string): Promise<void> => {
@@ -187,39 +172,39 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
         user_id: !isGroup ? Number(chatId) : undefined,
         message: messageSegments,
       });
-      log?.info(`[openclaw-channel-qq:${accountId}] Sent reply: ${text.slice(0, 100)}`);
+      log.info('dispatch', `Sent reply: ${text.slice(0, 100)}`);
     } catch (error) {
-      log?.error(`[openclaw-channel-qq:${accountId}] Send failed: ${error}`);
+      log.error('dispatch', `Send failed: ${error}`);
     }
   };
 
   // Get messages config for response prefix
-  const messagesConfig = pluginRuntime.channel.reply.resolveEffectiveMessagesConfig(cfg as any, route.agentId);
-  log?.info(`[openclaw-channel-qq:${accountId}] Messages config: ${JSON.stringify(messagesConfig)}`);
+  const messagesConfig = pluginRuntime.channel.reply.resolveEffectiveMessagesConfig(cfg, route.agentId);
+  log.info('dispatch', `Messages config: ${JSON.stringify(messagesConfig)}`);
 
   // Track if we got any response
   let hasResponse = false;
 
   // Dispatch the message for AI processing
   try {
-    log?.info(`[openclaw-channel-qq:${accountId}] Calling dispatchReplyWithBufferedBlockDispatcher...`);
+    log.info('dispatch', `Calling dispatchReplyWithBufferedBlockDispatcher...`);
 
     const dispatchPromise = pluginRuntime.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
       ctx: ctxPayload,
-      cfg: cfg as any,
+      cfg: cfg,
       dispatcherOptions: {
         responsePrefix: messagesConfig.responsePrefix,
         deliver: async (payload: { text?: string }, info: { kind: string }): Promise<void> => {
           hasResponse = true;
-          log?.info(`[openclaw-channel-qq:${accountId}] deliver(${info.kind}): ${payload.text?.slice(0, 100) || '(empty)'}`);
+          log.info('dispatch', `deliver(${info.kind}): ${payload.text?.slice(0, 100) || '(empty)'}`);
           if (payload.text) {
             await sendReply(payload.text);
           }
         },
         onError: async (err: unknown): Promise<void> => {
           hasResponse = true;
-          log?.error(`[openclaw-channel-qq:${accountId}] Dispatch error: ${err}`);
-          await sendReply(`[错误] ${String(err).slice(0, 200)}`);
+          log.error('dispatch', `Dispatch error: ${err}`);
+          await sendReply(`[错误] ${String(err)}`);
         },
       },
       replyOptions: {},
@@ -228,15 +213,13 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
     // Wait for dispatch to complete
     await dispatchPromise;
 
-    log?.info(`[openclaw-channel-qq:${accountId}] Dispatch completed, hasResponse: ${hasResponse}`);
+    log.info('dispatch', `Dispatch completed, hasResponse: ${hasResponse}`);
   } catch (error) {
-    log?.error(`[openclaw-channel-qq:${accountId}] Message processing failed: ${error}`);
+    log.error('dispatch', `Message processing failed: ${error}`);
   } finally {
     // Send stopped typing indicator after AI completes (for private messages)
     if (typingIndicatorSent) {
-      await sendStoppedTyping(conn, senderId).catch(() => {
-        // Silently ignore errors
-      });
+      await sendStoppedTyping(conn, senderId);
     }
   }
 }
@@ -245,7 +228,6 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
  * Handle group message event
  */
 export async function handleGroupMessage(
-  accountId: string,
   event: {
     time: number;
     self_id: number;
@@ -260,42 +242,21 @@ export async function handleGroupMessage(
     };
   },
   ctx: {
-    account: AccountConfig;
-    cfg: unknown;
-    log?: {
-      debug: (message: string, ...args: unknown[]) => void;
-      info: (message: string, ...args: unknown[]) => void;
-      warn: (message: string, ...args: unknown[]) => void;
-      error: (message: string, ...args: unknown[]) => void;
-    };
+    account: QQConfig;
+    cfg: OpenClawConfig;
   },
-  connectionManager: {
-    getConnection: (id: string) => ConnectionManager | undefined;
-  }
+  conn: ConnectionManager
 ): Promise<void> {
-  const { cfg, log } = ctx;
-  const conn = connectionManager.getConnection(accountId);
-  if (!conn) return;
-
-  // Cache bot user ID
-  if (event.self_id) {
-    conn.setBotUserId(event.self_id);
-  }
-
-  const botUserId = conn.getBotUserId();
-
   // Use async version to fetch file data
-  const { content } = await napCatToOpenClawMessageAsync(event.message, botUserId, conn as NapCatConnection);
+  const { content } = await napCatToOpenClawMessageAsync(event.message, conn);
 
   // Convert content array to plain text for the message body (async to fetch reply data)
-  const plainText = await contentToPlainText(content, event.raw_message, conn as NapCatConnection);
+  const plainText = await contentToPlainText(content, event.raw_message, conn);
 
-  log?.info(`[openclaw-channel-qq:${accountId}] Group message from ${event.sender?.nickname || event.sender?.card || event.user_id}: ${plainText}`);
+  log.info('dispatch', `Group message from ${event.sender?.nickname || event.sender?.card || event.user_id}: ${plainText}`);
 
   await dispatchMessage({
-    accountId,
-    cfg,
-    log,
+    cfg: ctx.cfg,
     chatType: 'group',
     chatId: String(event.group_id),
     senderId: String(event.user_id),
@@ -311,7 +272,6 @@ export async function handleGroupMessage(
  * Handle private message event
  */
 export async function handlePrivateMessage(
-  accountId: string,
   event: {
     time: number;
     self_id: number;
@@ -324,40 +284,22 @@ export async function handlePrivateMessage(
     };
   },
   ctx: {
-    account: AccountConfig;
-    cfg: unknown;
-    log?: {
-      debug: (message: string, ...args: unknown[]) => void;
-      info: (message: string, ...args: unknown[]) => void;
-      warn: (message: string, ...args: unknown[]) => void;
-      error: (message: string, ...args: unknown[]) => void;
-    };
+    account: QQConfig;
+    cfg: OpenClawConfig;
   },
-  connectionManager: {
-    getConnection: (id: string) => ConnectionManager | undefined;
-  }
+  conn: ConnectionManager
 ): Promise<void> {
-  const { cfg, log } = ctx;
-  const conn = connectionManager.getConnection(accountId);
-  if (!conn) return;
-
-  // Cache bot user ID
-  if (event.self_id) {
-    conn.setBotUserId(event.self_id);
-  }
 
   // Use async version to fetch file data
-  const { content } = await napCatToOpenClawMessageAsync(event.message, undefined, conn as NapCatConnection);
+  const { content } = await napCatToOpenClawMessageAsync(event.message, conn);
 
   // Convert content array to plain text for the message body (async to fetch reply data)
-  const plainText = await contentToPlainText(content, event.raw_message, conn as NapCatConnection);
+  const plainText = await contentToPlainText(content, event.raw_message, conn);
 
-  log?.info(`[openclaw-channel-qq:${accountId}] Private message from ${event.sender?.nickname || event.user_id}: ${plainText}`);
+  log.info('dispatch', `Private message from ${event.sender?.nickname || event.user_id}: ${plainText}`);
 
   await dispatchMessage({
-    accountId,
-    cfg,
-    log,
+    cfg: ctx.cfg,
     chatType: 'direct',
     chatId: String(event.user_id),
     senderId: String(event.user_id),
@@ -384,7 +326,6 @@ function extractPokeActionText(rawInfo?: Array<{ type: string; txt?: string }>):
  * Handle poke event
  */
 export async function handlePokeEvent(
-  accountId: string,
   event: {
     user_id: number;
     target_id: number;
@@ -392,30 +333,13 @@ export async function handlePokeEvent(
     raw_info?: Array<{ type: string; txt?: string }>;
   },
   ctx: {
-    account: AccountConfig;
-    cfg: unknown;
-    log?: {
-      debug: (message: string, ...args: unknown[]) => void;
-      info: (message: string, ...args: unknown[]) => void;
-      warn: (message: string, ...args: unknown[]) => void;
-      error: (message: string, ...args: unknown[]) => void;
-    };
+    account: QQConfig;
+    cfg: OpenClawConfig;
   },
-  connectionManager: {
-    getConnection: (id: string) => ConnectionManager | undefined;
-  }
+  conn: ConnectionManager
 ): Promise<void> {
-  const conn = connectionManager.getConnection(accountId);
-  if (!conn) return;
-
-  const botUserId = conn.getBotUserId();
-  if (botUserId && event.target_id !== botUserId) return;
-
   const actionText = extractPokeActionText(event.raw_info);
-  ctx.log?.info(`[openclaw-channel-qq:${accountId}] Poke from ${event.user_id}: ${actionText}`);
-
-  // Optionally dispatch as a message to trigger AI response
-  const { cfg, log } = ctx;
+  log.info('dispatch', `Poke from ${event.user_id}: ${actionText}`);
 
   // Convert poke to a text message for AI processing
   const pokeMessage = actionText || '戳了戳';
@@ -423,9 +347,7 @@ export async function handlePokeEvent(
   const chatId = String(event.group_id || event.user_id);
 
   await dispatchMessage({
-    accountId,
-    cfg,
-    log,
+    cfg: ctx.cfg,
     chatType,
     chatId,
     senderId: String(event.user_id),

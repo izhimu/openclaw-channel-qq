@@ -1,10 +1,15 @@
 # OpenClaw Channel Plugin - QQ (NapCat)
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
+[![OpenClaw](https://img.shields.io/badge/OpenClaw-Plugin-blueviolet.svg)](https://docs.openclaw.ai/)
+[![Protocol](https://img.shields.io/badge/Protocol-OneBot_11-yellow.svg)](https://github.com/botuniverse/onebot-11)
+[![TypeScript](https://img.shields.io/badge/Language-TypeScript-blue.svg)](https://www.typescriptlang.org/)
+
 A QQ channel plugin for [OpenClaw](https://docs.openclaw.ai/) using the [NapCat](https://github.com/NapNeko/NapCatQQ) WebSocket API (OneBot 11 standard).
 
 ## Features
 
-- **Multi-Account Support** - Connect and manage multiple QQ bot accounts simultaneously
+- **QQ Bot Integration** - Connect and manage your QQ bot account
 - **Chat Types** - Supports both direct (private) and group messages
 - **Message Types** - Text, @mentions, images, faces, and message replies
 - **Typing Indicator** - Shows "typing..." status in private chats when bot is generating responses
@@ -25,10 +30,10 @@ A QQ channel plugin for [OpenClaw](https://docs.openclaw.ai/) using the [NapCat]
 
 ```bash
 # Via OpenClaw CLI (recommended)
-openclaw plugins install openclaw-channel-qq
+openclaw plugins install qq
 
 # Or manually from local path
-openclaw plugins install /path/to/openclaw-channel-qq
+openclaw plugins install /path/to/qq
 ```
 
 ### 2. Configure NapCat
@@ -50,14 +55,10 @@ Edit your OpenClaw config file:
 ```json
 {
   "channels": {
-    "openclaw-channel-qq": {
-      "accounts": {
-        "bot1": {
-          "wsUrl": "ws://127.0.0.1:3001",
-          "accessToken": "",
-          "enabled": true
-        }
-      }
+    "qq": {
+      "wsUrl": "ws://127.0.0.1:3001",
+      "accessToken": "",
+      "enabled": true
     }
   }
 }
@@ -86,37 +87,10 @@ Add to your OpenClaw config:
 ```json
 {
   "channels": {
-    "openclaw-channel-qq": {
-      "accounts": {
-        "bot1": {
-          "wsUrl": "ws://127.0.0.1:3001",
-          "accessToken": "",
-          "enabled": true
-        }
-      }
-    }
-  }
-}
-```
-
-Or multiple accounts:
-
-```json
-{
-  "channels": {
-    "openclaw-channel-qq": {
-      "accounts": {
-        "bot1": {
-          "wsUrl": "ws://127.0.0.1:3001",
-          "accessToken": "",
-          "enabled": true
-        },
-        "bot2": {
-          "wsUrl": "ws://127.0.0.1:3002",
-          "accessToken": "your-token",
-          "enabled": true
-        }
-      }
+    "qq": {
+      "wsUrl": "ws://127.0.0.1:3001",
+      "accessToken": "",
+      "enabled": true
     }
   }
 }
@@ -135,7 +109,7 @@ Or multiple accounts:
 
 ```bash
 # Via CLI
-openclaw message send "Hello from OpenClaw!" --to openclaw-channel-qq:private:123456789
+openclaw message send "Hello from OpenClaw!" --to qq:private:123456789
 ```
 
 ### Receiving Messages
@@ -159,7 +133,7 @@ openclaw channels
 ```typescript
 interface Message {
   id: string;
-  channel: "openclaw-channel-qq";
+  channel: "qq";
   accountId: string;
   chatId: string;          // Group ID or user ID
   chatType: "direct" | "group";
@@ -197,9 +171,9 @@ npm run dev
 ## Project Structure
 
 ```
-openclaw-channel-qq/
+qq/
 ├── src/
-│   ├── index.ts         # Main plugin definition
+│   ├── channel.ts         # Main plugin definition
 │   ├── core/
 │   │   ├── connection.ts    # WebSocket connection manager
 │   │   └── dispatch.ts      # Event dispatcher
@@ -209,14 +183,14 @@ openclaw-channel-qq/
 │   │   └── config.ts        # Configuration resolution
 │   ├── onboarding.ts    # Interactive setup wizard
 │   ├── types/
-│   │   └── index.ts        # TypeScript definitions
+│   │   └── channel.ts        # TypeScript definitions
 │   └── utils/
-│       ├── index.ts        # Utility functions
+│       ├── channel.ts        # Utility functions
 │       └── typing.ts       # Typing indicator utilities
 ├── docs/
 │   ├── napcat-websocket-api.md  # NapCat API reference
 │   └── plugin-development-guide.md
-├── index.ts             # Plugin entry point
+├── channel.ts             # Plugin entry point
 ├── openclaw.plugin.json # Plugin manifest
 └── package.json
 ```
