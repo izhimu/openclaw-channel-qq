@@ -1,5 +1,5 @@
 {
-  "id": "qq",
+  "id": "openclaw-channel-qq",
   "channels": ["qq"],
   "configSchema": {
     "type": "object",

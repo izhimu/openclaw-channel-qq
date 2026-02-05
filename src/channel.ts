@@ -310,6 +310,7 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
       // Update start time
       ctx.setStatus({
         ...ctx.getStatus(),
+        running: true,
         lastStartAt: Date.now(),
       });
 
@@ -322,14 +323,12 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
         if (status.state === "connected") {
           context?.setStatus({
             ...context.getStatus(),
-            running: true,
             connected: true,
             lastConnectedAt: Date.now(),
           });
         } else if (status.state === "disconnected" || status.state === "failed") {
           context?.setStatus({
             ...context.getStatus(),
-            running: false,
             connected: false,
             lastError: status.error,
           });

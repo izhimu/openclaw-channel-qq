@@ -38,7 +38,6 @@ export class ConnectionManager extends EventEmitter {
   private lastHeartbeatTime = 0;
 
   // Connection stats
-  private connectedAt = 0;
   private totalReconnectAttempts = 0;
 
   // Reconnection
@@ -167,7 +166,6 @@ export class ConnectionManager extends EventEmitter {
   private handleOpen(): void {
     log.info('connection', `Connected to NapCat`);
     this.setState('connected');
-    this.connectedAt = Date.now();
     this.totalReconnectAttempts += this.reconnectAttempts;
     this.reconnectAttempts = 0;
     this.emit('connected');
