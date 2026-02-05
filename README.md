@@ -55,7 +55,7 @@ Edit your OpenClaw config file:
 ```json
 {
   "channels": {
-    "qq": {
+    "openclaw-channel-qq": {
       "wsUrl": "ws://127.0.0.1:3001",
       "accessToken": "",
       "enabled": true
@@ -87,7 +87,7 @@ Add to your OpenClaw config:
 ```json
 {
   "channels": {
-    "qq": {
+    "openclaw-channel-qq": {
       "wsUrl": "ws://127.0.0.1:3001",
       "accessToken": "",
       "enabled": true
@@ -133,7 +133,7 @@ openclaw channels
 ```typescript
 interface Message {
   id: string;
-  channel: "qq";
+  channel: "openclaw-channel-qq";
   accountId: string;
   chatId: string;          // Group ID or user ID
   chatType: "direct" | "group";

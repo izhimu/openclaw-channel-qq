@@ -1,6 +1,6 @@
 {
   "id": "openclaw-channel-qq",
-  "channels": ["qq"],
+  "channels": ["openclaw-channel-qq"],
   "configSchema": {
     "type": "object",
     "additionalProperties": false,

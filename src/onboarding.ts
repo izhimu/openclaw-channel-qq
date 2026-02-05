@@ -11,14 +11,14 @@ import { QQConfig } from "./types/index.js"
  * QQ NapCat Onboarding Adapter
  */
 export const qqOnboardingAdapter: ChannelOnboardingAdapter = {
-  channel: "qq",
+  channel: "openclaw-channel-qq",
   getStatus: async (ctx) => {
     const { cfg } = ctx;
     const config = cfg.channels?.qq as QQConfig;
     const configured = Boolean(config.wsUrl);
 
     return {
-      channel: "qq",
+      channel: "openclaw-channel-qq",
       configured,
       statusLines: configured
         ? ["QQ (NapCat): 已配置"]

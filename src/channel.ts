@@ -79,7 +79,7 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
       const { to, text, accountId, cfg, replyToId } = ctx;
       if (!accountId) {
         return {
-          channel: "qq",
+          channel: "openclaw-channel-qq",
           messageId: "",
           error: new Error("accountId is required"),
           deliveredAt: Date.now(),
@@ -88,7 +88,7 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
       const account = resolveQQAccount({ cfg });
       if (!account) {
         return {
-          channel: "qq",
+          channel: "openclaw-channel-qq",
           messageId: "",
           error: new Error(`Account not found: ${accountId}`),
           deliveredAt: Date.now(),
@@ -97,7 +97,7 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
 
       if (!connection || !connection.isConnected()) {
         return {
-          channel: "qq",
+          channel: "openclaw-channel-qq",
           messageId: "",
           error: new Error(`Not connected for account: ${accountId}`),
           deliveredAt: Date.now(),
@@ -132,13 +132,13 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
         if (response.status === "ok" && response.data) {
           const data = response.data as { message_id: number };
           return {
-            channel: "qq",
+            channel: "openclaw-channel-qq",
             messageId: messageIdToString(data.message_id),
             deliveredAt: Date.now(),
           };
         } else {
           return {
-            channel: "qq",
+            channel: "openclaw-channel-qq",
             messageId: "",
             error: new Error(response.msg || "Send failed"),
             deliveredAt: Date.now(),
@@ -147,7 +147,7 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         return {
-          channel: "qq",
+          channel: "openclaw-channel-qq",
           messageId: "",
           error: new Error(errorMessage),
           deliveredAt: Date.now(),
@@ -162,7 +162,7 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
       if (!accountId) {
         log.warn("outbound", "sendMedia failed: accountId is required");
         return {
-          channel: "qq",
+          channel: "openclaw-channel-qq",
           messageId: "",
           error: new Error("accountId is required"),
           deliveredAt: Date.now(),
@@ -173,7 +173,7 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
       if (mediaUrl === null || mediaUrl === undefined || mediaUrl === "") {
         log.warn("outbound", `sendMedia failed: mediaUrl is invalid (value: ${String(mediaUrl)})`);
         return {
-          channel: "qq",
+          channel: "openclaw-channel-qq",
           messageId: "",
           error: new Error(`mediaUrl is required but received: ${mediaUrl === null ? "null" : mediaUrl === undefined ? "undefined" : "empty string"}`),
           deliveredAt: Date.now(),
@@ -185,7 +185,7 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
       if (trimmedUrl === "" || trimmedUrl.length < 3) {
         log.warn("outbound", `sendMedia failed: mediaUrl is too short or empty after trim`);
         return {
-          channel: "qq",
+          channel: "openclaw-channel-qq",
           messageId: "",
           error: new Error(`mediaUrl appears to be invalid: "${trimmedUrl}"`),
           deliveredAt: Date.now(),
@@ -196,7 +196,7 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
       if (!account) {
         log.warn("outbound", `sendMedia failed: Account not found: ${accountId}`);
         return {
-          channel: "qq",
+          channel: "openclaw-channel-qq",
           messageId: "",
           error: new Error(`Account not found: ${accountId}`),
           deliveredAt: Date.now(),
@@ -206,7 +206,7 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
       if (!connection || !connection.isConnected()) {
         log.warn("outbound", `sendMedia failed: Not connected for account: ${accountId}`);
         return {
-          channel: "qq",
+          channel: "openclaw-channel-qq",
           messageId: "",
           error: new Error(`Not connected for account: ${accountId}`),
           deliveredAt: Date.now(),
@@ -264,7 +264,7 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
           const data = response.data as { message_id: number };
           log.debug("outbound", `Media sent successfully, message_id: ${data.message_id}`);
           return {
-            channel: "qq",
+            channel: "openclaw-channel-qq",
             messageId: messageIdToString(data.message_id),
             deliveredAt: Date.now(),
           };
@@ -272,7 +272,7 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
           const errorMsg = response.msg || "Send media failed";
           log.warn("outbound", `sendMedia failed - status: ${response.status}, retcode: ${response.retcode}, msg: ${errorMsg}`);
           return {
-            channel: "qq",
+            channel: "openclaw-channel-qq",
             messageId: "",
             error: new Error(`NapCat error [${response.retcode ?? "unknown"}]: ${errorMsg}`),
             deliveredAt: Date.now(),
@@ -282,7 +282,7 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
         const errorMessage = error instanceof Error ? error.message : String(error);
         log.error("outbound", `sendMedia exception: ${errorMessage}`);
         return {
-          channel: "qq",
+          channel: "openclaw-channel-qq",
           messageId: "",
           error: new Error(`sendMedia error: ${errorMessage}`),
           deliveredAt: Date.now(),
@@ -294,7 +294,7 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
     buildAccountSnapshot: ({ account, runtime }) => {
       return {
         accountId: DEFAULT_ACCOUNT_ID,
-        name: "qq",
+        name: "openclaw-channel-qq",
         enabled: account.enabled,
         configured: Boolean(account.wsUrl),
         ...runtime,
