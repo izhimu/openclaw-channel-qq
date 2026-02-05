@@ -7,7 +7,7 @@ import type { QQConfig, OpenClawMessageContent } from '../types/index.js';
 import type { ConnectionManager } from './connection.js';
 import { napCatToOpenClawMessageAsync } from '../adapters/message.js';
 import { Logger as log, sendTypingIndicator, sendStoppedTyping } from '../utils/index.js';
-import { OpenClawConfig } from "openclaw/plugin-sdk";
+import type { OpenClawConfig, ReplyPayload } from "openclaw/plugin-sdk";
 
 /**
  * Format text for multi-line quote block by prefixing each line with ">"
@@ -194,9 +194,9 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
       cfg: cfg,
       dispatcherOptions: {
         responsePrefix: messagesConfig.responsePrefix,
-        deliver: async (payload: { text?: string }, info: { kind: string }): Promise<void> => {
+        deliver: async (payload: ReplyPayload, info: { kind: string }): Promise<void> => {
           hasResponse = true;
-          log.info('dispatch', `deliver(${info.kind}): ${payload.text?.slice(0, 100) || '(empty)'}`);
+          log.info('dispatch', `deliver(${info.kind}): ${payload}`);
           if (payload.text) {
             await sendReply(payload.text);
           }
