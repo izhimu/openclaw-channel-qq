@@ -9,7 +9,7 @@ import { qqPlugin } from "./src/channel.js";
 import { setQQRuntime } from "./src/core/runtime.js";
 
 const plugin = {
-  id: "qq",
+  id: "openclaw-channel-qq",
   name: "QQ NapCat",
   description: "QQ channel plugin for OpenClaw using NapCat WebSocket API",
   configSchema: emptyPluginConfigSchema,

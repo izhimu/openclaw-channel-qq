@@ -32,9 +32,9 @@ let context: ChannelGatewayContext<QQConfig> | null = null;
 // =============================================================================
 
 export const qqPlugin: ChannelPlugin<QQConfig> = {
-  id: "qq",
+  id: "openclaw-channel-qq",
   meta: {
-    id: "qq",
+    id: "openclaw-channel-qq",
     label: "QQ",
     selectionLabel: "QQ",
     docsPath: "/docs/channels/qq",
