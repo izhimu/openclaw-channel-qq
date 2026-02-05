@@ -11,7 +11,7 @@ import { z } from "zod";
  * 列出所有 QQ 账户ID
  */
 export function listQQAccountIds(cfg: OpenClawConfig): string[] {
-  const config = cfg.channels?.qq as QQConfig;
+  const config = cfg.channels?.["openclaw-channel-qq"] as QQConfig;
 
   if (config?.wsUrl) {
     return [DEFAULT_ACCOUNT_ID];
@@ -26,7 +26,7 @@ export function listQQAccountIds(cfg: OpenClawConfig): string[] {
 export function resolveQQAccount(params: {
   cfg: OpenClawConfig,
 }): QQConfig {
-  const config = params.cfg.channels?.qq as QQConfig;
+  const config = params.cfg.channels?.["openclaw-channel-qq"] as QQConfig;
 
   return {
     enabled: config?.enabled !== false,

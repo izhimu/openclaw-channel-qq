@@ -14,7 +14,7 @@ export const qqOnboardingAdapter: ChannelOnboardingAdapter = {
   channel: "openclaw-channel-qq",
   getStatus: async (ctx) => {
     const { cfg } = ctx;
-    const config = cfg.channels?.qq as QQConfig;
+    const config = cfg.channels?.["openclaw-channel-qq"] as QQConfig;
     const configured = Boolean(config.wsUrl);
 
     return {
@@ -99,7 +99,7 @@ export const qqOnboardingAdapter: ChannelOnboardingAdapter = {
         channels: {
           ...next.channels,
           qq: {
-            ...next.channels?.qq as QQConfig,
+            ...next.channels?.["openclaw-channel-qq"] as QQConfig,
             enabled: true,
             wsUrl,
             ...(accessToken ? { accessToken } : {}),
@@ -116,7 +116,7 @@ export const qqOnboardingAdapter: ChannelOnboardingAdapter = {
     channels: {
       ...cfg.channels,
       qq: {
-        ...cfg.channels?.qq as QQConfig,
+        ...cfg.channels?.["openclaw-channel-qq"] as QQConfig,
         enabled: false,
       }
     },

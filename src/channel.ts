@@ -49,7 +49,7 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
     media: true,
     blockStreaming: true,
   },
-  reload: { configPrefixes: ["channels.qq"] },
+  reload: { configPrefixes: ["channels.openclaw-channel-qq"] },
   onboarding: qqOnboardingAdapter,
   config: {
     listAccountIds: (cfg) => listQQAccountIds(cfg),
