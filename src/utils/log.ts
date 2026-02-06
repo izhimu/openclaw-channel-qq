@@ -2,7 +2,7 @@ import type { RuntimeLogger } from "../types/index.js";
 import { getQQRuntime } from "../core/runtime.js"
 
 function log(): RuntimeLogger {
-  return getQQRuntime().logging.getChildLogger();
+  return getQQRuntime().logging.getChildLogger({ module: 'channel/qq' });
 }
 
 function param(...args: unknown[]): string {
