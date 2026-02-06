@@ -186,7 +186,6 @@ qq/
 │   │   └── channel.ts        # TypeScript definitions
 │   └── utils/
 │       ├── channel.ts        # Utility functions
-│       └── typing.ts       # Typing indicator utilities
 ├── docs/
 │   ├── napcat-websocket-api.md  # NapCat API reference
 │   └── plugin-development-guide.md

@@ -3,38 +3,35 @@
  * Main plugin entry point
  */
 
-import { ChannelPlugin, ChannelOutboundContext, ChannelGatewayContext } from "openclaw/plugin-sdk";
+import { ChannelPlugin, ChannelOutboundContext } from "openclaw/plugin-sdk";
 import { buildChannelConfigSchema, DEFAULT_ACCOUNT_ID } from "openclaw/plugin-sdk";
-import { QQConfig, ConnectionStatus, OutboundDeliveryResult } from "./types/index.js";
+import { CHANNEL_ID, QQConfig, ConnectionStatus, OutboundDeliveryResult } from "./types/index.js";
 import {
   messageIdToString,
   Logger as log
 } from "./utils/index.js";
+import {
+  setContext,
+  setContextStatus,
+  clearContext,
+  setConnection,
+  getConnection,
+  clearConnection
+} from "./core/runtime.js";
 import { ConnectionManager } from "./core/connection.js";
 import { openClawToNapCatMessage } from "./adapters/message.js";
-import { handleGroupMessage, handlePrivateMessage, handlePokeEvent } from "./core/dispatch.js";
 import {
   listQQAccountIds,
   resolveQQAccount,
   QQConfigSchema
 } from "./core/config.js";
+import { eventListener, sendMsg } from "./core/request.js"
 import { qqOnboardingAdapter } from "./onboarding.js";
 
-// =============================================================================
-// Plugin State
-// =============================================================================
-
-let connection: ConnectionManager | null = null;
-let context: ChannelGatewayContext<QQConfig> | null = null;
-
-// =============================================================================
-// Plugin Definition
-// =============================================================================
-
 export const qqPlugin: ChannelPlugin<QQConfig> = {
-  id: "openclaw-channel-qq",
+  id: CHANNEL_ID,
   meta: {
-    id: "openclaw-channel-qq",
+    id: CHANNEL_ID,
     label: "QQ",
     selectionLabel: "QQ",
     docsPath: "/docs/channels/qq",
@@ -49,7 +46,7 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
     media: true,
     blockStreaming: true,
   },
-  reload: { configPrefixes: ["channels.openclaw-channel-qq"] },
+  reload: { configPrefixes: [`channels.${CHANNEL_ID}`] },
   onboarding: qqOnboardingAdapter,
   config: {
     listAccountIds: (cfg) => listQQAccountIds(cfg),
@@ -79,7 +76,7 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
       const { to, text, accountId, cfg, replyToId } = ctx;
       if (!accountId) {
         return {
-          channel: "openclaw-channel-qq",
+          channel: CHANNEL_ID,
           messageId: "",
           error: new Error("accountId is required"),
           deliveredAt: Date.now(),
@@ -88,16 +85,18 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
       const account = resolveQQAccount({ cfg });
       if (!account) {
         return {
-          channel: "openclaw-channel-qq",
+          channel: CHANNEL_ID,
           messageId: "",
           error: new Error(`Account not found: ${accountId}`),
           deliveredAt: Date.now(),
         };
       }
 
-      if (!connection || !connection.isConnected()) {
+      const connection = getConnection()
+
+      if (!connection?.isConnected()) {
         return {
-          channel: "openclaw-channel-qq",
+          channel: CHANNEL_ID,
           messageId: "",
           error: new Error(`Not connected for account: ${accountId}`),
           deliveredAt: Date.now(),
@@ -114,31 +113,30 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
       try {
         const messageSegments = openClawToNapCatMessage([{ type: "text", text }], replyToId ?? undefined);
 
-        const response = await connection.sendRequest("send_msg", {
+        const response = await sendMsg({
           message_type: chatType === "direct" ? "private" : "group",
-          user_id: chatType === "direct" ? Number(chatId) : undefined,
-          group_id: chatType === "group" ? Number(chatId) : undefined,
+          user_id: chatType === "direct" ? chatId : undefined,
+          group_id: chatType === "group" ? chatId : undefined,
           message: messageSegments,
-        });
+        })
 
         // Update lastOutboundAt timestamp on successful send
         if (response.status === "ok") {
-          context?.setStatus({
-            ...context.getStatus(),
+          setContextStatus({
             lastOutboundAt: Date.now(),
-          });
+          })
         }
 
         if (response.status === "ok" && response.data) {
           const data = response.data as { message_id: number };
           return {
-            channel: "openclaw-channel-qq",
+            channel: CHANNEL_ID,
             messageId: messageIdToString(data.message_id),
             deliveredAt: Date.now(),
           };
         } else {
           return {
-            channel: "openclaw-channel-qq",
+            channel: CHANNEL_ID,
             messageId: "",
             error: new Error(response.msg || "Send failed"),
             deliveredAt: Date.now(),
@@ -147,7 +145,7 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         return {
-          channel: "openclaw-channel-qq",
+          channel: CHANNEL_ID,
           messageId: "",
           error: new Error(errorMessage),
           deliveredAt: Date.now(),
@@ -162,7 +160,7 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
       if (!accountId) {
         log.warn("outbound", "sendMedia failed: accountId is required");
         return {
-          channel: "openclaw-channel-qq",
+          channel: CHANNEL_ID,
           messageId: "",
           error: new Error("accountId is required"),
           deliveredAt: Date.now(),
@@ -173,7 +171,7 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
       if (mediaUrl === null || mediaUrl === undefined || mediaUrl === "") {
         log.warn("outbound", `sendMedia failed: mediaUrl is invalid (value: ${String(mediaUrl)})`);
         return {
-          channel: "openclaw-channel-qq",
+          channel: CHANNEL_ID,
           messageId: "",
           error: new Error(`mediaUrl is required but received: ${mediaUrl === null ? "null" : mediaUrl === undefined ? "undefined" : "empty string"}`),
           deliveredAt: Date.now(),
@@ -185,7 +183,7 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
       if (trimmedUrl === "" || trimmedUrl.length < 3) {
         log.warn("outbound", `sendMedia failed: mediaUrl is too short or empty after trim`);
         return {
-          channel: "openclaw-channel-qq",
+          channel: CHANNEL_ID,
           messageId: "",
           error: new Error(`mediaUrl appears to be invalid: "${trimmedUrl}"`),
           deliveredAt: Date.now(),
@@ -196,17 +194,19 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
       if (!account) {
         log.warn("outbound", `sendMedia failed: Account not found: ${accountId}`);
         return {
-          channel: "openclaw-channel-qq",
+          channel: CHANNEL_ID,
           messageId: "",
           error: new Error(`Account not found: ${accountId}`),
           deliveredAt: Date.now(),
         };
       }
 
-      if (!connection || !connection.isConnected()) {
+      const connection = getConnection()
+
+      if (!connection?.isConnected()) {
         log.warn("outbound", `sendMedia failed: Not connected for account: ${accountId}`);
         return {
-          channel: "openclaw-channel-qq",
+          channel: CHANNEL_ID,
           messageId: "",
           error: new Error(`Not connected for account: ${accountId}`),
           deliveredAt: Date.now(),
@@ -243,10 +243,10 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
 
         log.debug("outbound", `Message segments: ${JSON.stringify(messageSegments)}`);
 
-        const response = await connection.sendRequest("send_msg", {
+        const response = await sendMsg({
           message_type: chatType === "direct" ? "private" : "group",
-          user_id: chatType === "direct" ? Number(chatId) : undefined,
-          group_id: chatType === "group" ? Number(chatId) : undefined,
+          user_id: chatType === "direct" ? chatId : undefined,
+          group_id: chatType === "group" ? chatId : undefined,
           message: messageSegments,
         });
 
@@ -254,8 +254,7 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
 
         // Update lastOutboundAt timestamp on successful send
         if (response.status === "ok") {
-          context?.setStatus({
-            ...context.getStatus(),
+          setContextStatus({
             lastOutboundAt: Date.now(),
           });
         }
@@ -264,7 +263,7 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
           const data = response.data as { message_id: number };
           log.debug("outbound", `Media sent successfully, message_id: ${data.message_id}`);
           return {
-            channel: "openclaw-channel-qq",
+            channel: CHANNEL_ID,
             messageId: messageIdToString(data.message_id),
             deliveredAt: Date.now(),
           };
@@ -272,7 +271,7 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
           const errorMsg = response.msg || "Send media failed";
           log.warn("outbound", `sendMedia failed - status: ${response.status}, retcode: ${response.retcode}, msg: ${errorMsg}`);
           return {
-            channel: "openclaw-channel-qq",
+            channel: CHANNEL_ID,
             messageId: "",
             error: new Error(`NapCat error [${response.retcode ?? "unknown"}]: ${errorMsg}`),
             deliveredAt: Date.now(),
@@ -282,7 +281,7 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
         const errorMessage = error instanceof Error ? error.message : String(error);
         log.error("outbound", `sendMedia exception: ${errorMessage}`);
         return {
-          channel: "openclaw-channel-qq",
+          channel: CHANNEL_ID,
           messageId: "",
           error: new Error(`sendMedia error: ${errorMessage}`),
           deliveredAt: Date.now(),
@@ -294,7 +293,7 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
     buildAccountSnapshot: ({ account, runtime }) => {
       return {
         accountId: DEFAULT_ACCOUNT_ID,
-        name: "openclaw-channel-qq",
+        name: CHANNEL_ID,
         enabled: account.enabled,
         configured: Boolean(account.wsUrl),
         ...runtime,
@@ -303,7 +302,8 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
   },
   gateway: {
     startAccount: async (ctx) => {
-      const { account } = context = ctx
+      setContext(ctx)
+      const { account } = ctx
 
       log.info('gateway', `Starting gateway`);
 
@@ -315,20 +315,18 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
       });
 
       // Create new connection manager
-      connection = new ConnectionManager(account);
+      const connection = new ConnectionManager(account);
 
-      connection.on("event", (event) => handleNapCatEvent(event));
+      connection.on("event", (event) => eventListener(event));
       connection.on("state-changed", (status: ConnectionStatus) => {
         log.info('gateway', `State: ${status.state}`);
         if (status.state === "connected") {
-          context?.setStatus({
-            ...context.getStatus(),
+          setContextStatus({
             connected: true,
             lastConnectedAt: Date.now(),
           });
         } else if (status.state === "disconnected" || status.state === "failed") {
-          context?.setStatus({
-            ...context.getStatus(),
+          setContextStatus({
             connected: false,
             lastError: status.error,
           });
@@ -337,92 +335,24 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
 
       await connection.start();
 
+      setConnection(connection);
+
       log.info('gateway', `Started gateway`);
     },
     stopAccount: async (_ctx) => {
+      const connection = getConnection();
+
       if (connection) {
         await connection.stop();
+        clearConnection()
       }
-      // Update running state
-      context?.setStatus({
-        ...context.getStatus(),
+
+      setContextStatus({
         running: false,
         connected: false,
         lastStopAt: Date.now(),
       });
-      context = null
+      clearContext()
     },
   },
 };
-
-// =============================================================================
-// Event Handling
-// =============================================================================
-
-async function handleNapCatEvent(event: any): Promise<void> {
-  log.debug("events", `Received event: ${event.post_type}`);
-
-  if (!context) {
-    log.warn("events", `No gateway context`);
-    return;
-  }
-
-  if (!connection) {
-    log.warn("events", `No connection available`);
-    return;
-  }
-
-  const { account, cfg } = context;
-
-  // NapCat/OneBot 11 uses post_type: "message" with message_type: "private" or "group"
-  switch (event.post_type) {
-    case "message":
-      context.setStatus({
-        ...context.getStatus(),
-        lastInboundAt: Date.now(),
-      });
-      if (event.message_type === "group" && event.group_id) {
-        await handleGroupMessage({
-          time: event.time,
-          self_id: event.self_id,
-          message_id: event.message_id ?? 0,
-          group_id: event.group_id,
-          user_id: event.user_id,
-          message: event.message ?? [],
-          raw_message: event.raw_message ?? '',
-          sender: event.sender,
-        }, { account, cfg }, connection);
-      } else if (event.message_type === "private") {
-        await handlePrivateMessage({
-          time: event.time,
-          self_id: event.self_id,
-          message_id: event.message_id ?? 0,
-          user_id: event.user_id,
-          message: event.message ?? [],
-          raw_message: event.raw_message ?? '',
-          sender: event.sender,
-        }, { account, cfg }, connection);
-      }
-      break;
-
-    case "notice":
-      if (event.target_id) {
-        const isPokeEvent =
-          event.notice_type === "poke" ||
-          (event.notice_type === "notify" && event.sub_type === "poke");
-
-        if (isPokeEvent) {
-          await handlePokeEvent({
-            user_id: event.user_id,
-            target_id: event.target_id,
-            group_id: event.group_id,
-            raw_info: event.raw_info,
-          }, { account, cfg }, connection);
-        }
-      }
-      break;
-
-    default:
-      log.debug("events", `Unhandled event type: ${event.post_type}`);
-  }
-}

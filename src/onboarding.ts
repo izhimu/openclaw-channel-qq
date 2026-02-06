@@ -5,20 +5,20 @@
  */
 import type { ChannelOnboardingAdapter } from "openclaw/plugin-sdk"
 import { resolveQQAccount } from "./core/config.js";
-import { QQConfig } from "./types/index.js"
+import { CHANNEL_ID, QQConfig } from "./types/index.js"
 
 /**
  * QQ NapCat Onboarding Adapter
  */
 export const qqOnboardingAdapter: ChannelOnboardingAdapter = {
-  channel: "openclaw-channel-qq",
+  channel: CHANNEL_ID,
   getStatus: async (ctx) => {
     const { cfg } = ctx;
-    const config = cfg.channels?.["openclaw-channel-qq"] as QQConfig;
+    const config = cfg.channels?.[CHANNEL_ID] as QQConfig;
     const configured = Boolean(config.wsUrl);
 
     return {
-      channel: "openclaw-channel-qq",
+      channel: CHANNEL_ID,
       configured,
       statusLines: configured
         ? ["QQ (NapCat): 已配置"]
@@ -99,7 +99,7 @@ export const qqOnboardingAdapter: ChannelOnboardingAdapter = {
         channels: {
           ...next.channels,
           qq: {
-            ...next.channels?.["openclaw-channel-qq"] as QQConfig,
+            ...next.channels?.[CHANNEL_ID] as QQConfig,
             enabled: true,
             wsUrl,
             ...(accessToken ? { accessToken } : {}),
@@ -116,7 +116,7 @@ export const qqOnboardingAdapter: ChannelOnboardingAdapter = {
     channels: {
       ...cfg.channels,
       qq: {
-        ...cfg.channels?.["openclaw-channel-qq"] as QQConfig,
+        ...cfg.channels?.[CHANNEL_ID] as QQConfig,
         enabled: false,
       }
     },

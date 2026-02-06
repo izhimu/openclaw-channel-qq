@@ -4,14 +4,14 @@
 
 import type { OpenClawConfig } from "openclaw/plugin-sdk";
 import { DEFAULT_ACCOUNT_ID } from "openclaw/plugin-sdk";
-import type { QQConfig } from "../types/index.js";
+import { CHANNEL_ID, QQConfig } from "../types/index.js";
 import { z } from "zod";
 
 /**
  * 列出所有 QQ 账户ID
  */
 export function listQQAccountIds(cfg: OpenClawConfig): string[] {
-  const config = cfg.channels?.["openclaw-channel-qq"] as QQConfig;
+  const config = cfg.channels?.[CHANNEL_ID] as QQConfig;
 
   if (config?.wsUrl) {
     return [DEFAULT_ACCOUNT_ID];
@@ -26,7 +26,7 @@ export function listQQAccountIds(cfg: OpenClawConfig): string[] {
 export function resolveQQAccount(params: {
   cfg: OpenClawConfig,
 }): QQConfig {
-  const config = params.cfg.channels?.["openclaw-channel-qq"] as QQConfig;
+  const config = params.cfg.channels?.[CHANNEL_ID] as QQConfig;
 
   return {
     enabled: config?.enabled !== false,

@@ -1,8 +1,8 @@
 import type { RuntimeLogger } from "../types/index.js";
-import { getQQRuntime } from "../core/runtime.js"
+import { getRuntime } from "../core/runtime.js"
 
 function log(): RuntimeLogger {
-  return getQQRuntime().logging.getChildLogger({ module: 'channel/qq' });
+  return getRuntime()?.logging.getChildLogger({ module: 'channel/qq' }) ?? console;
 }
 
 function param(args: unknown[]): string {

@@ -3,17 +3,19 @@
  * Based on NapCat OneBot 11 implementation
  */
 
+export const CHANNEL_ID = 'openclaw-channel-qq'
+
 // =============================================================================
 // NapCat API Request/Response Format
 // =============================================================================
 
-export interface NapCatRequest {
+export interface NapCatReq<T = unknown> {
   action: NapCatAction;
-  params?: Record<string, unknown>;
+  params?: T;
   echo?: string;
 }
 
-export interface NapCatResponse<T = unknown> {
+export interface NapCatResp<T = unknown> {
   status: 'ok' | 'failed';
   retcode: number;
   msg: string;
@@ -62,13 +64,12 @@ export interface NapCatMetaEvent extends NapCatEvent {
 // NapCat Message Segment Types
 // =============================================================================
 
-export type NapCatMessageSegment =
+export type NapCatMessage =
   | NapCatTextSegment
   | NapCatAtSegment
   | NapCatImageSegment
   | NapCatReplySegment
   | NapCatFaceSegment
-  | NapCatPokeSegment
   | NapCatRecordSegment
   | NapCatFileSegment
   | NapCatJsonSegment
@@ -110,15 +111,6 @@ export interface NapCatFaceSegment {
   type: 'face';
   data: {
     id: string;
-  };
-}
-
-export interface NapCatPokeSegment {
-  type: 'poke';
-  data: {
-    type?: string;
-    id?: string;
-    qq?: string;
   };
 }
 
@@ -229,13 +221,20 @@ export interface OpenClawJsonContent {
   prompt?: string;
 }
 
-export type OpenClawMessageContent =
+export interface OpenClawFileContent {
+  type: 'file';
+  fileId: string;
+  fileSize?: number;
+}
+
+export type OpenClawMessage =
   | OpenClawTextContent
   | OpenClawAtContent
   | OpenClawImageContent
   | OpenClawReplyContent
   | OpenClawAudioContent
-  | OpenClawJsonContent;
+  | OpenClawJsonContent
+  | OpenClawFileContent;
 
 // =============================================================================
 // API Response Types
@@ -246,7 +245,7 @@ export type OpenClawMessageContent =
 // =============================================================================
 
 export interface PendingRequest {
-  resolve: (response: NapCatResponse) => void;
+  resolve: (response: NapCatResp) => void;
   reject: (error: Error) => void;
   timeout: NodeJS.Timeout;
 }
@@ -301,12 +300,28 @@ export interface GetMsgSender {
   card?: string;
 }
 
-/**
- * Data returned by get_msg API
- */
-export interface GetMsgData {
+// =============================================================================
+// Request Types
+// =============================================================================
+
+export interface SendMsgReq {
+  message_type: 'private' | 'group';
+  user_id?: string
+  group_id?: string;
+  message: string | NapCatMessage[];
+}
+
+export interface SendMsgResp {
+  message_id: number;
+}
+
+export interface GetMsgReq {
+  message_id: number;
+}
+
+export interface GetMsgResp {
   self_id: number;
-  user_id: number;
+  user_id: string;
   time: number;
   message_id: number;
   message_seq: number;
@@ -317,9 +332,51 @@ export interface GetMsgData {
   raw_message: string;
   font: number;
   sub_type?: string;
-  message: string | NapCatMessageSegment[];
+  message: string | NapCatMessage[];
   message_format: string;
   post_type: string;
   group_id?: number;
   emoji_likes_list?: unknown[];
+}
+
+export interface GetFileReq {
+  file?: string;
+  file_id?: string;
+}
+
+export interface GetFileResp {
+  file?: string;
+  url?: string;
+  file_size?: string;
+  file_name?: string;
+  base64?: string;
+}
+
+export interface SetInputStatusReq {
+  user_id: string;
+  event_type: 0 | 1 | 2;
+}
+
+export interface DispatchMessageMedia {
+  type?: string;
+  path?: string;
+  url?: string;
+}
+
+export interface DispatchMessageReply {
+  id?: string;
+  content?: string;
+  sender?: string;
+}
+
+export interface DispatchMessageParams {
+  chatType: 'direct' | 'group';
+  chatId: string;
+  senderId: string;
+  senderName?: string;
+  messageId: string;
+  content: string;
+  media?: DispatchMessageMedia;
+  reply?: DispatchMessageReply;
+  timestamp: number;
 }

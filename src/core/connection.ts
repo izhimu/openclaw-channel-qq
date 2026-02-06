@@ -6,8 +6,8 @@
 import WebSocket from 'ws';
 import EventEmitter from 'events';
 import {
-  NapCatRequest,
-  NapCatResponse,
+  NapCatReq,
+  NapCatResp,
   NapCatEvent,
   NapCatMetaEvent,
   QQConfig,
@@ -173,11 +173,11 @@ export class ConnectionManager extends EventEmitter {
 
   private handleMessage(data: Buffer): void {
     try {
-      const message = JSON.parse(data.toString()) as NapCatResponse | NapCatEvent;
+      const message = JSON.parse(data.toString()) as NapCatResp | NapCatEvent;
 
       // Handle response to a request
       if ('echo' in message && message.echo) {
-        this.handleResponse(message as NapCatResponse);
+        this.handleResponse(message as NapCatResp);
         return;
       }
 
@@ -244,7 +244,7 @@ export class ConnectionManager extends EventEmitter {
     }
   }
 
-  private handleResponse(response: NapCatResponse): void {
+  private handleResponse(response: NapCatResp): void {
     const { echo } = response;
     if (!echo) {
       return;
@@ -316,17 +316,17 @@ export class ConnectionManager extends EventEmitter {
   /**
    * Send a request and wait for response
    */
-  async sendRequest<T = unknown>(
+  async sendRequest<Req = unknown, Resp = unknown>(
     action: NapCatAction,
-    params?: Record<string, unknown>
-  ): Promise<NapCatResponse<T>> {
+    params?: Req
+  ): Promise<NapCatResp<Resp>> {
     if (!this.isConnected()) {
-      throw new Error(`Not connected`);
+      return failResp<Resp>()
     }
 
     const echo = generateEchoId();
 
-    return new Promise<NapCatResponse<T>>((resolve, reject) => {
+    return new Promise<NapCatResp<Resp>>((resolve, reject) => {
       // Set up timeout
       const timeout = setTimeout(() => {
         this.pendingRequests.delete(echo);
@@ -335,14 +335,14 @@ export class ConnectionManager extends EventEmitter {
 
       // Store pending request
       this.pendingRequests.set(echo, {
-        resolve: resolve as (response: NapCatResponse) => void,
+        resolve: resolve as (response: NapCatResp) => void,
         reject,
         timeout,
       });
 
       // Send request
-      const request: NapCatRequest = {
-        action: action as any,
+      const request: NapCatReq<Req> = {
+        action,
         params,
         echo,
       };
@@ -403,3 +403,10 @@ export class ConnectionManager extends EventEmitter {
   }
 }
 
+export async function failResp<T>(msg: string = ''): Promise<NapCatResp<T>> {
+  return Promise.resolve({
+    status: "failed",
+    retcode: -1,
+    msg
+  });
+}

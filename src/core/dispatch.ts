@@ -3,131 +3,140 @@
  * Handles routing and dispatching incoming messages to the AI
  */
 
-import type { QQConfig, OpenClawMessageContent } from '../types/index.js';
-import type { ConnectionManager } from './connection.js';
-import { napCatToOpenClawMessageAsync } from '../adapters/message.js';
-import { Logger as log, sendTypingIndicator, sendStoppedTyping } from '../utils/index.js';
-import type { OpenClawConfig, ReplyPayload } from "openclaw/plugin-sdk";
-
-/**
- * Format text for multi-line quote block by prefixing each line with ">"
- */
-function formatQuoteBlock(text: string): string {
-  if (!text) return '';
-  return text.split('\n').map(line => `> ${line}`).join('\n');
-}
+import type { ReplyPayload } from "openclaw/plugin-sdk";
+import type {
+  DispatchMessageMedia,
+  DispatchMessageParams,
+  DispatchMessageReply,
+  OpenClawMessage,
+} from '../types/index.js';
+import { CHANNEL_ID } from '../types/index.js';
+import { getRuntime, getContext } from './runtime.js'
+import { getMsg, getFile, sendMsg, setInputStatus } from './request.js'
+import { napCatToOpenClawMessage } from '../adapters/message.js';
+import { Logger as log, markdownToText } from '../utils/index.js';
 
 /**
  * Convert OpenClaw message content array to plain text
  * For images, includes the URL so AI models can access them
  * For replies, includes quoted message content if available
  */
-async function contentToPlainText(
-  content: OpenClawMessageContent[],
-  rawMessage: string,
-  connection?: ConnectionManager
-): Promise<string> {
-  // Check if this message contains a reply segment
-  const hasReply = content.some(c => c.type === 'reply');
-
-  let quotedMessageText: string | null = null;
-  if (hasReply && connection) {
-    // Import parseReplyMessage to fetch quoted message
-    const { parseReplyMessage } = await import('../adapters/message.js');
-    const result = await parseReplyMessage(rawMessage, connection);
-    if (result.isReply && result.data) {
-      const quotedText = result.data.quotedSenderNickname + ': ' + result.data.quotedMessage;
-      quotedMessageText = `[回复]\n\n${formatQuoteBlock(quotedText)}\n\n${result.data.replyText}`;
-    }
-  }
-
-  // If we successfully fetched the quoted message, return it directly
-  if (quotedMessageText) {
-    return quotedMessageText;
-  }
-
-  // Otherwise, fall back to simple text conversion (but skip reply segments)
+async function contentToPlainText(content: OpenClawMessage[]): Promise<string> {
   return content
-    .filter(c => c.type !== 'reply')
+    .filter(c => c.type !== 'reply' && c.type !== 'image' && c.type !== 'audio' && c.type !== 'file')
     .map((c) => {
       switch (c.type) {
         case 'text':
           return c.text;
         case 'at':
           return c.isAll ? '@全体成员' : `@${c.userId}`;
-        case 'image': {
-          // Include image URL so AI models can access the image
-          // Use summary if available (e.g., "[动画表情]" for animated stickers)
-          const label = c.summary || '[图片]';
-          return c.url ? `${label}(${c.url})` : label;
-        }
-        case 'audio': {
-          // Audio/voice messages - include URL if available
-          const label = '[语音]';
-          return c.url ? `${label}(${c.url})` : label;
-        }
-        case 'json': {
-          // JSON messages - format as markdown code block
-          const header = c.prompt || '[JSON]';
-          return `${header}\n\`\`\`json\n${c.data}\n\`\`\``;
-        }
+        case 'json':
+          return `[JSON]\n\`\`\`json\n${c.data}\n\`\`\``;
         default:
           return '';
       }
     }).join('');
 }
 
-/**
- * Message dispatch parameters
- */
-export interface DispatchMessageParams {
-  cfg: OpenClawConfig;
-  chatType: 'direct' | 'group';
-  chatId: string;
-  senderId: string;
-  senderName?: string;
-  messageId: string;
-  content: string;
-  timestamp: number;
-  conn: ConnectionManager;
+async function contextToMedia(content: OpenClawMessage[]): Promise<DispatchMessageMedia | undefined> {
+  const hasMedia = content.some(c => c.type === 'image' || c.type === 'audio' || c.type === 'file');
+  if (!hasMedia) {
+    return;
+  }
+  const image = content.find(c => c.type === 'image');
+  if (image) {
+    return {
+      type: 'image/jpeg',
+      path: image.url,
+      url: image.url,
+    };
+  }
+  const audio = content.find(c => c.type === 'audio');
+  if (audio) {
+    return {
+      type: 'audio/amr',
+      path: audio.path,
+      url: audio.url,
+    };
+  }
+  const file = content.find(c => c.type === 'file');
+  if (file) {
+    const fileInfo = await getFile({ file_id: file.fileId });
+    if (fileInfo.data?.file == undefined) {
+      return;
+    }
+    return {
+      type: 'application/octet-stream',
+      path: fileInfo.data?.file,
+      url: fileInfo.data?.url,
+    };
+  }
+  return;
+}
+
+async function contextToReply(content: OpenClawMessage[]): Promise<DispatchMessageReply | undefined> {
+  const hasReply = content.some(c => c.type === 'reply');
+  if (!hasReply) {
+    return;
+  }
+  const reply = content.find(c => c.type === 'reply');
+  if (!reply) {
+    return;
+  }
+  const response = await getMsg({
+    message_id: Number(reply.messageId),
+  });
+  if (response.data?.message == undefined) {
+    return;
+  }
+  const replyMessage = await napCatToOpenClawMessage(response.data?.message);
+  const text = await contentToPlainText(replyMessage);
+  return {
+    id: reply.messageId,
+    content: text,
+    sender: String(response.data?.sender.user_id)
+  };
 }
 
 /**
  * Dispatch an incoming message to the AI for processing
  */
 export async function dispatchMessage(params: DispatchMessageParams): Promise<void> {
-  const { cfg, chatType, chatId, senderId, senderName, messageId, content, timestamp, conn } = params;
+  const { chatType, chatId, senderId, senderName, messageId, content, media, reply, timestamp } = params;
 
-  // Import here to avoid circular dependency
-  const { getQQRuntime } = await import('./runtime.js');
-  const pluginRuntime = getQQRuntime();
-
-  if (!pluginRuntime) {
+  const runtime = getRuntime();
+  if (!runtime) {
     log.warn('dispatch', `Plugin runtime not available`);
+    return;
+  }
+  const context = getContext();
+  if (!context) {
+    log.warn('dispatch', `No gateway context`);
     return;
   }
 
   const isGroup = chatType === 'group';
   const peerId = isGroup ? `group:${chatId}` : senderId;
 
-  // Send typing indicator for private messages only (API requires user_id)
-  let typingIndicatorSent = false;
   if (!isGroup) {
-    await sendTypingIndicator(conn, senderId);
-    typingIndicatorSent = true;
+    // 输入状态
+    await setInputStatus({
+      user_id: senderId,
+      event_type: 1
+    });
   }
 
-  const route = pluginRuntime.channel.routing.resolveAgentRoute({
-    cfg,
-    channel: 'qq',
+  const route = runtime.channel.routing.resolveAgentRoute({
+    cfg: context.cfg,
+    channel: CHANNEL_ID,
     peer: {
       kind: isGroup ? 'group' : 'dm',
       id: peerId,
     },
   });
-  const envelopeOptions = pluginRuntime.channel.reply.resolveEnvelopeFormatOptions(cfg);
-  const body = pluginRuntime.channel.reply.formatInboundEnvelope({
-    channel: 'qq',
+  const envelopeOptions = runtime.channel.reply.resolveEnvelopeFormatOptions(context.cfg);
+  const body = runtime.channel.reply.formatInboundEnvelope({
+    channel: CHANNEL_ID,
     from: senderName || senderId,
     body: content,
     timestamp,
@@ -140,59 +149,66 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
   });
   const fromAddress = isGroup ? `qq:group:${chatId}` : `qq:private:${senderId}`;
   const toAddress = fromAddress;
-  const ctxPayload = pluginRuntime.channel.reply.finalizeInboundContext({
-    Body: body,
-    RawBody: content,
-    CommandBody: content,
-    From: fromAddress,
-    To: toAddress,
-    SessionKey: route.sessionKey,
-    AccountId: route.accountId,
-    ChatType: isGroup ? 'group' : 'direct',
-    SenderId: senderId,
-    SenderName: senderName,
-    Provider: 'qq',
-    Surface: 'qq',
-    MessageSid: messageId,
-    Timestamp: timestamp,
-    OriginatingChannel: 'qq',
-    OriginatingTo: toAddress,
-  });
+  const ctxPayload = runtime.channel.reply.finalizeInboundContext({
+      Body: body,
+      RawBody: content,
+      CommandBody: content,
+      From: fromAddress,
+      To: toAddress,
+      SessionKey: route.sessionKey,
+      AccountId: route.accountId,
+      ChatType: isGroup ? 'group' : 'direct',
+      SenderId: senderId,
+      SenderName: senderName,
+      Provider: CHANNEL_ID,
+      Surface: CHANNEL_ID,
+      MessageSid: messageId,
+      Timestamp: timestamp,
+      ReplyToId: reply?.id,
+      ReplyToBody: reply?.content,
+      ReplyToSender: reply?.sender,
+      ReplyToIsQuote: !!reply,
+      MediaType: media?.type,
+      MediaPath: media?.path,
+      MediaUrl: media?.url,
+      OriginatingChannel:
+      CHANNEL_ID,
+      OriginatingTo:
+      toAddress,
+    })
+  ;
 
   log.info('dispatch', `Dispatching to agent ${route.agentId}, session: ${route.sessionKey}`);
 
-  // Send function for delivering replies
   const sendReply = async (text: string): Promise<void> => {
-    const messageSegments = [{ type: 'text', data: { text } }];
+    const messageSegments = [{ type: 'text', data: { text: markdownToText(text) } }];
 
     try {
-      await conn.sendRequest('send_msg', {
+      await sendMsg({
         message_type: isGroup ? 'group' : 'private',
-        group_id: isGroup ? Number(chatId) : undefined,
-        user_id: !isGroup ? Number(chatId) : undefined,
+        group_id: isGroup ? chatId : undefined,
+        user_id: !isGroup ? chatId : undefined,
         message: messageSegments,
-      });
+      })
       log.info('dispatch', `Sent reply: ${text.slice(0, 100)}`);
     } catch (error) {
       log.error('dispatch', `Send failed: ${error}`);
     }
   };
 
-  // Get messages config for response prefix
-  const messagesConfig = pluginRuntime.channel.reply.resolveEffectiveMessagesConfig(cfg, route.agentId);
+  const messagesConfig = runtime.channel.reply.resolveEffectiveMessagesConfig(context.cfg, route.agentId);
   log.info('dispatch', `Messages config: ${JSON.stringify(messagesConfig)}`);
 
-  // Track if we got any response
   let hasResponse = false;
 
-  // Dispatch the message for AI processing
   try {
-    log.info('dispatch', `Calling dispatchReplyWithBufferedBlockDispatcher...`);
-
-    const dispatchPromise = pluginRuntime.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
+    await runtime.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
       ctx: ctxPayload,
-      cfg: cfg,
+      cfg: context.cfg,
       dispatcherOptions: {
+        humanDelay: {
+          mode: "off"
+        },
         responsePrefix: messagesConfig.responsePrefix,
         deliver: async (payload: ReplyPayload, info: { kind: string }): Promise<void> => {
           hasResponse = true;
@@ -210,16 +226,16 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
       replyOptions: {},
     });
 
-    // Wait for dispatch to complete
-    await dispatchPromise;
-
     log.info('dispatch', `Dispatch completed, hasResponse: ${hasResponse}`);
   } catch (error) {
     log.error('dispatch', `Message processing failed: ${error}`);
   } finally {
-    // Send stopped typing indicator after AI completes (for private messages)
-    if (typingIndicatorSent) {
-      await sendStoppedTyping(conn, senderId);
+    if (!isGroup) {
+      // 输入状态
+      await setInputStatus({
+        user_id: senderId,
+        event_type: 2
+      });
     }
   }
 }
@@ -240,31 +256,26 @@ export async function handleGroupMessage(
       nickname?: string;
       card?: string;
     };
-  },
-  ctx: {
-    account: QQConfig;
-    cfg: OpenClawConfig;
-  },
-  conn: ConnectionManager
+  }
 ): Promise<void> {
-  // Use async version to fetch file data
-  const { content } = await napCatToOpenClawMessageAsync(event.message, conn);
+  const content = await napCatToOpenClawMessage(event.message);
 
-  // Convert content array to plain text for the message body (async to fetch reply data)
-  const plainText = await contentToPlainText(content, event.raw_message, conn);
+  const plainText = await contentToPlainText(content);
+  const media = await contextToMedia(content);
+  const reply = await contextToReply(content);
 
-  log.info('dispatch', `Group message from ${event.sender?.nickname || event.sender?.card || event.user_id}: ${plainText}`);
+  log.info('dispatch', `Group message from ${event.sender?.nickname || event.sender?.card || event.user_id}: ${plainText}, media: ${media != undefined}, reply: ${reply != undefined}`);
 
   await dispatchMessage({
-    cfg: ctx.cfg,
     chatType: 'group',
     chatId: String(event.group_id),
     senderId: String(event.user_id),
     senderName: event.sender?.nickname || event.sender?.card,
     messageId: String(event.message_id),
     content: plainText,
+    media,
+    reply,
     timestamp: event.time * 1000,
-    conn,
   });
 }
 
@@ -282,79 +293,60 @@ export async function handlePrivateMessage(
     sender?: {
       nickname?: string;
     };
-  },
-  ctx: {
-    account: QQConfig;
-    cfg: OpenClawConfig;
-  },
-  conn: ConnectionManager
+  }
 ): Promise<void> {
+  const content = await napCatToOpenClawMessage(event.message);
 
-  // Use async version to fetch file data
-  const { content } = await napCatToOpenClawMessageAsync(event.message, conn);
+  const plainText = await contentToPlainText(content);
+  const media = await contextToMedia(content);
+  const reply = await contextToReply(content);
 
-  // Convert content array to plain text for the message body (async to fetch reply data)
-  const plainText = await contentToPlainText(content, event.raw_message, conn);
-
-  log.info('dispatch', `Private message from ${event.sender?.nickname || event.user_id}: ${plainText}`);
+  log.info('dispatch', `Private message from ${event.sender?.nickname || event.user_id}: ${plainText}, media: ${media != undefined}, reply: ${reply != undefined}`);
 
   await dispatchMessage({
-    cfg: ctx.cfg,
     chatType: 'direct',
     chatId: String(event.user_id),
     senderId: String(event.user_id),
     senderName: event.sender?.nickname,
     messageId: String(event.message_id),
     content: plainText,
+    media,
+    reply,
     timestamp: event.time * 1000,
-    conn,
   });
-}
-
-/**
- * Extract action text from raw_info (e.g., "戳了戳")
- */
-function extractPokeActionText(rawInfo?: Array<{ type: string; txt?: string }>): string {
-  if (!rawInfo) return '戳了戳';
-
-  // Find the "nor" type item with txt field
-  const actionItem = rawInfo.find(item => item.type === 'nor' && item.txt);
-  return actionItem?.txt || '戳了戳';
 }
 
 /**
  * Handle poke event
  */
+function extractPokeActionText(rawInfo?: Array<{ type: string; txt?: string }>): string {
+  if (!rawInfo) return '戳了戳';
+  const actionItem = rawInfo.find(item => item.type === 'nor' && item.txt);
+  return actionItem?.txt || '戳了戳';
+}
+
 export async function handlePokeEvent(
   event: {
     user_id: number;
     target_id: number;
     group_id?: number;
     raw_info?: Array<{ type: string; txt?: string }>;
-  },
-  ctx: {
-    account: QQConfig;
-    cfg: OpenClawConfig;
-  },
-  conn: ConnectionManager
+  }
 ): Promise<void> {
   const actionText = extractPokeActionText(event.raw_info);
   log.info('dispatch', `Poke from ${event.user_id}: ${actionText}`);
 
-  // Convert poke to a text message for AI processing
   const pokeMessage = actionText || '戳了戳';
   const chatType = event.group_id ? 'group' : 'direct';
   const chatId = String(event.group_id || event.user_id);
 
   await dispatchMessage({
-    cfg: ctx.cfg,
     chatType,
     chatId,
     senderId: String(event.user_id),
     senderName: String(event.user_id),
     messageId: `poke_${event.user_id}_${Date.now()}`,
-    content: pokeMessage,
+    content: `[动作] ${pokeMessage}`,
     timestamp: Date.now(),
-    conn,
   });
 }
