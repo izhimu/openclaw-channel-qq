@@ -173,24 +173,28 @@ npm run dev
 ```
 qq/
 ├── src/
-│   ├── channel.ts         # Main plugin definition
+│   ├── channel.ts           # Main plugin definition
 │   ├── core/
 │   │   ├── connection.ts    # WebSocket connection manager
-│   │   └── dispatch.ts      # Event dispatcher
+│   │   ├── dispatch.ts      # Event dispatcher
+│   │   ├── config.ts        # Configuration resolution
+│   │   ├── request.ts       # NapCat API request handler
+│   │   └── runtime.ts       # Runtime state management
 │   ├── adapters/
 │   │   └── message.ts       # NapCat ↔ OpenClaw message conversion
-│   ├── core/
-│   │   └── config.ts        # Configuration resolution
-│   ├── onboarding.ts    # Interactive setup wizard
+│   ├── onboarding.ts        # Interactive setup wizard
 │   ├── types/
-│   │   └── channel.ts        # TypeScript definitions
+│   │   └── index.ts         # TypeScript definitions
 │   └── utils/
-│       ├── channel.ts        # Utility functions
+│       ├── index.ts         # Utility functions
+│       ├── log.ts           # Logging utilities
+│       ├── markdown.ts      # Markdown processing
+│       └── cqcode.ts        # CQCode parser
 ├── docs/
 │   ├── napcat-websocket-api.md  # NapCat API reference
 │   └── plugin-development-guide.md
-├── channel.ts             # Plugin entry point
-├── openclaw.plugin.json # Plugin manifest
+├── index.ts                 # Plugin entry point
+├── openclaw.plugin.json     # Plugin manifest
 └── package.json
 ```
 

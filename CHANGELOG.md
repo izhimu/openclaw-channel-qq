@@ -22,6 +22,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Simplified plugin label from "QQ (NapCat)" to "QQ"
 - Simplified configuration schema to empty object for flexibility
 
+## [1.0.1] - 2026-02-06
+
+### Changed
+- 重构日志系统以使用运行时日志接口
+- 优化参数处理逻辑
+- 更新日志记录以包含回复负载的JSON字符串
+- 移除日志消息中的qq前缀
+
+### Fixed
+- 修复 OpenClawConfig 导入问题
+- 更新所有QQ配置引用为"openclaw-channel-qq"以确保一致性
+- 修复连接状态管理
+- 调整消息派送的负载类型
+
 ## [1.0.0] - 2026-02-03
 
 ### Added
