@@ -256,6 +256,17 @@ export interface PendingRequest {
 // =============================================================================
 
 /**
+ * Runtime logger interface from OpenClaw plugin-sdk
+ * (Not exported from openclaw/package, defined locally)
+ */
+export interface RuntimeLogger {
+  debug?: (message: string) => void;
+  info: (message: string) => void;
+  warn: (message: string) => void;
+  error: (message: string) => void;
+}
+
+/**
  * Standard outbound delivery result
  */
 export interface OutboundDeliveryResult {

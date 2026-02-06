@@ -1,38 +1,28 @@
-export enum LogLevel {
-  DEBUG = 0,
-  INFO = 1,
-  WARN = 2,
-  ERROR = 3,
+import type { RuntimeLogger } from "../types/index.js";
+import { getQQRuntime } from "../core/runtime.js"
+
+function log(): RuntimeLogger {
+  return getQQRuntime().logging.getChildLogger();
+}
+
+function param(...args: unknown[]): string {
+  return args.length > 0 ? ' ' + args.map(arg => typeof arg === 'string' ? arg : JSON.stringify(arg)).join(' ') : '';
 }
 
 export class Logger {
-  static level = LogLevel.INFO;
-
-  static setLevel(level: LogLevel): void {
-    this.level = level;
-  }
-
   static debug(category: string, message: string, ...args: unknown[]): void {
-    if (this.level <= LogLevel.DEBUG) {
-      console.debug(`[qq:${category}] ${message}`, ...args);
-    }
+    log().debug?.(`[qq:${category}] ${message}${param(args)}`);
   }
 
   static info(category: string, message: string, ...args: unknown[]): void {
-    if (this.level <= LogLevel.INFO) {
-      console.info(`[qq:${category}] ${message}`, ...args);
-    }
+    log().info?.(`[qq:${category}] ${message}${param(args)}`);
   }
 
   static warn(category: string, message: string, ...args: unknown[]): void {
-    if (this.level <= LogLevel.WARN) {
-      console.warn(`[qq:${category}] ${message}`, ...args);
-    }
+    log().warn?.(`[qq:${category}] ${message}${param(args)}`);
   }
 
   static error(category: string, message: string, ...args: unknown[]): void {
-    if (this.level <= LogLevel.ERROR) {
-      console.error(`[qq:${category}] ${message}`, ...args);
-    }
+    log().error?.(`[qq:${category}] ${message}${param(args)}`);
   }
 }
