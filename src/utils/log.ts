@@ -12,18 +12,18 @@ function param(args: unknown[]): string {
 
 export class Logger {
   static debug(category: string, message: string, ...args: unknown[]): void {
-    log().debug?.(`[qq:${category}] ${message}${param(args)}`);
+    log().debug?.(`[${category}] ${message}${param(args)}`);
   }
 
   static info(category: string, message: string, ...args: unknown[]): void {
-    log().info?.(`[qq:${category}] ${message}${param(args)}`);
+    log().info?.(`[${category}] ${message}${param(args)}`);
   }
 
   static warn(category: string, message: string, ...args: unknown[]): void {
-    log().warn?.(`[qq:${category}] ${message}${param(args)}`);
+    log().warn?.(`[${category}] ${message}${param(args)}`);
   }
 
   static error(category: string, message: string, ...args: unknown[]): void {
-    log().error?.(`[qq:${category}] ${message}${param(args)}`);
+    log().error?.(`[${category}] ${message}${param(args)}`);
   }
 }
