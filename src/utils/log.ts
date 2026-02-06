@@ -5,8 +5,9 @@ function log(): RuntimeLogger {
   return getQQRuntime().logging.getChildLogger({ module: 'channel/qq' });
 }
 
-function param(...args: unknown[]): string {
-  return args.length > 0 ? ' ' + args.map(arg => typeof arg === 'string' ? arg : JSON.stringify(arg)).join(' ') : '';
+function param(args: unknown[]): string {
+  if (args.length === 0) return '';
+  return ' ' + args.map(arg => typeof arg === 'string' ? arg : JSON.stringify(arg)).join(' ');
 }
 
 export class Logger {
