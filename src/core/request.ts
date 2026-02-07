@@ -1,7 +1,4 @@
-import { Logger as log } from "../utils/index.js"
-import { setContextStatus, getContext, getConnection } from "./runtime.js"
-import { handleGroupMessage, handlePrivateMessage, handlePokeEvent } from "./dispatch.js";
-import {
+import type {
   GetFileReq,
   GetFileResp,
   GetMsgReq,
@@ -11,6 +8,9 @@ import {
   SendMsgResp,
   SetInputStatusReq
 } from "../types/index.js";
+import { Logger as log } from "../utils/index.js"
+import { setContextStatus, getContext, getConnection } from "./runtime.js"
+import { handleGroupMessage, handlePrivateMessage, handlePokeEvent } from "./dispatch.js";
 import { failResp } from "./connection.js"
 
 /**

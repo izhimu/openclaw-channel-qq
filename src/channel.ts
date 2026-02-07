@@ -3,9 +3,9 @@
  * Main plugin entry point
  */
 
-import { ChannelPlugin, ChannelOutboundContext } from "openclaw/plugin-sdk";
+import type { ChannelPlugin, ChannelOutboundContext } from "openclaw/plugin-sdk";
 import { buildChannelConfigSchema, DEFAULT_ACCOUNT_ID } from "openclaw/plugin-sdk";
-import { CHANNEL_ID, QQConfig, ConnectionStatus, OutboundDeliveryResult } from "./types/index.js";
+import type { QQConfig, ConnectionStatus, OutboundDeliveryResult } from "./types/index.js";
 import {
   messageIdToString,
   Logger as log
@@ -23,7 +23,7 @@ import { openClawToNapCatMessage } from "./adapters/message.js";
 import {
   listQQAccountIds,
   resolveQQAccount,
-  QQConfigSchema
+  QQConfigSchema, CHANNEL_ID
 } from "./core/config.js";
 import { eventListener, sendMsg } from "./core/request.js"
 import { qqOnboardingAdapter } from "./onboarding.js";
@@ -34,10 +34,8 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
     id: CHANNEL_ID,
     label: "QQ",
     selectionLabel: "QQ",
-    docsPath: "/docs/channels/qq",
+    docsPath: "/channels/qq",
     blurb: "通过 NapCat WebSocket 连接 QQ 机器人",
-    order: 50,
-    quickstartAllowFrom: true,
   },
   capabilities: {
     chatTypes: ["direct", "group"],

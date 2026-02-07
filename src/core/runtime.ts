@@ -3,8 +3,8 @@
  * Stores the PluginRuntime for access in gateway handlers
  */
 
-import { ChannelAccountSnapshot, ChannelGatewayContext, PluginRuntime } from "openclaw/plugin-sdk";
-import { QQConfig } from "../types/index.js";
+import type { ChannelAccountSnapshot, ChannelGatewayContext, PluginRuntime } from "openclaw/plugin-sdk";
+import type { QQConfig } from "../types/index.js";
 import { ConnectionManager } from "./connection.js";
 
 // =============================================================================

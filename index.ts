@@ -7,7 +7,7 @@ import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
 import { qqPlugin } from "./src/channel.js";
 import { setRuntime } from "./src/core/runtime.js";
-import { CHANNEL_ID } from "./src/types/index.js"
+import { CHANNEL_ID } from "./src/core/config.js";
 
 const plugin = {
   id: CHANNEL_ID,

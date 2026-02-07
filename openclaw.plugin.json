@@ -1,6 +1,8 @@
 {
-  "id": "openclaw-channel-qq",
-  "channels": ["openclaw-channel-qq"],
+  "id": "qq",
+  "name": "QQ",
+  "channels": ["qq"],
+  "description": "QQ channel plugin for OpenClaw using NapCat WebSocket API",
   "configSchema": {
     "type": "object",
     "additionalProperties": false,

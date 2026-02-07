@@ -3,8 +3,6 @@
  * Based on NapCat OneBot 11 implementation
  */
 
-export const CHANNEL_ID = 'openclaw-channel-qq'
-
 // =============================================================================
 // NapCat API Request/Response Format
 // =============================================================================

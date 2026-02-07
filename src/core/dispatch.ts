@@ -10,11 +10,11 @@ import type {
   DispatchMessageReply,
   OpenClawMessage,
 } from '../types/index.js';
-import { CHANNEL_ID } from '../types/index.js';
 import { getRuntime, getContext } from './runtime.js'
 import { getMsg, getFile, sendMsg, setInputStatus } from './request.js'
 import { napCatToOpenClawMessage } from '../adapters/message.js';
 import { Logger as log, markdownToText } from '../utils/index.js';
+import { CHANNEL_ID } from "./config.js";
 
 /**
  * Convert OpenClaw message content array to plain text
@@ -148,7 +148,7 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
     envelope: envelopeOptions,
   });
   const fromAddress = isGroup ? `qq:group:${chatId}` : `qq:private:${senderId}`;
-  const toAddress = fromAddress;
+  const toAddress = `qq:${route.accountId}`;
   const ctxPayload = runtime.channel.reply.finalizeInboundContext({
       Body: body,
       RawBody: content,
@@ -171,10 +171,8 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
       MediaType: media?.type,
       MediaPath: media?.path,
       MediaUrl: media?.url,
-      OriginatingChannel:
-      CHANNEL_ID,
-      OriginatingTo:
-      toAddress,
+      OriginatingChannel: CHANNEL_ID,
+      OriginatingTo: toAddress,
     })
   ;
 
