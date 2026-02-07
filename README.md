@@ -1,4 +1,4 @@
-# @izhimu/openclaw-channel-qq
+# @izhimu/qq
 
 <p align="center">
   <a href="https://opensource.org/licenses/MIT">
