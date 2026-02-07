@@ -4,8 +4,8 @@
  * 提供 openclaw onboard 命令的交互式配置支持
  */
 import type { ChannelOnboardingAdapter } from "openclaw/plugin-sdk"
-import { resolveQQAccount } from "./core/config.js";
-import { CHANNEL_ID, QQConfig } from "./types/index.js"
+import { CHANNEL_ID, resolveQQAccount } from "./core/config.js";
+import type { QQConfig } from "./types/index.js"
 
 /**
  * QQ NapCat Onboarding Adapter

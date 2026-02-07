@@ -5,7 +5,7 @@
 
 import WebSocket from 'ws';
 import EventEmitter from 'events';
-import {
+import type {
   NapCatReq,
   NapCatResp,
   NapCatEvent,

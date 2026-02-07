@@ -10,11 +10,11 @@ import type {
   DispatchMessageReply,
   OpenClawMessage,
 } from '../types/index.js';
-import { CHANNEL_ID } from '../types/index.js';
 import { getRuntime, getContext } from './runtime.js'
 import { getMsg, getFile, sendMsg, setInputStatus } from './request.js'
 import { napCatToOpenClawMessage } from '../adapters/message.js';
 import { Logger as log, markdownToText } from '../utils/index.js';
+import { CHANNEL_ID } from "./config.js";
 
 /**
  * Convert OpenClaw message content array to plain text
@@ -27,7 +27,7 @@ async function contentToPlainText(content: OpenClawMessage[]): Promise<string> {
     .map((c) => {
       switch (c.type) {
         case 'text':
-          return c.text;
+          return `[消息]\n${c.text}`;
         case 'at':
           return c.isAll ? '@全体成员' : `@${c.userId}`;
         case 'json':
@@ -74,6 +74,7 @@ async function contextToMedia(content: OpenClawMessage[]): Promise<DispatchMessa
   return;
 }
 
+// TODO弃用
 async function contextToReply(content: OpenClawMessage[]): Promise<DispatchMessageReply | undefined> {
   const hasReply = content.some(c => c.type === 'reply');
   if (!hasReply) {
@@ -98,6 +99,23 @@ async function contextToReply(content: OpenClawMessage[]): Promise<DispatchMessa
   };
 }
 
+async function sendText(isGroup: boolean, chatId: string, text: string): Promise<void> {
+  const cleanText = text.replace(/NO_REPLY\s*$/, '');
+  const messageSegments = [{ type: 'text', data: { text: markdownToText(cleanText) } }];
+
+  try {
+    await sendMsg({
+      message_type: isGroup ? 'group' : 'private',
+      group_id: isGroup ? chatId : undefined,
+      user_id: !isGroup ? chatId : undefined,
+      message: messageSegments,
+    })
+    log.info('dispatch', `Sent reply: ${text.slice(0, 100)}`);
+  } catch (error) {
+    log.error('dispatch', `Send failed: ${error}`);
+  }
+}
+
 /**
  * Dispatch an incoming message to the AI for processing
  */
@@ -117,14 +135,7 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
 
   const isGroup = chatType === 'group';
   const peerId = isGroup ? `group:${chatId}` : senderId;
-
-  if (!isGroup) {
-    // 输入状态
-    await setInputStatus({
-      user_id: senderId,
-      event_type: 1
-    });
-  }
+  const fullContent = `${content}\n\nFrom QQ(${senderId}) - Nickname: ${senderName}`
 
   const route = runtime.channel.routing.resolveAgentRoute({
     cfg: context.cfg,
@@ -138,7 +149,7 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
   const body = runtime.channel.reply.formatInboundEnvelope({
     channel: CHANNEL_ID,
     from: senderName || senderId,
-    body: content,
+    body: fullContent,
     timestamp,
     chatType: isGroup ? 'group' : 'direct',
     sender: {
@@ -148,11 +159,11 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
     envelope: envelopeOptions,
   });
   const fromAddress = isGroup ? `qq:group:${chatId}` : `qq:private:${senderId}`;
-  const toAddress = fromAddress;
+  const toAddress = `qq:${route.accountId}`;
   const ctxPayload = runtime.channel.reply.finalizeInboundContext({
       Body: body,
-      RawBody: content,
-      CommandBody: content,
+      RawBody: fullContent,
+      CommandBody: fullContent,
       From: fromAddress,
       To: toAddress,
       SessionKey: route.sessionKey,
@@ -171,35 +182,14 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
       MediaType: media?.type,
       MediaPath: media?.path,
       MediaUrl: media?.url,
-      OriginatingChannel:
-      CHANNEL_ID,
-      OriginatingTo:
-      toAddress,
+      OriginatingChannel: CHANNEL_ID,
+      OriginatingTo: toAddress,
     })
   ;
 
   log.info('dispatch', `Dispatching to agent ${route.agentId}, session: ${route.sessionKey}`);
 
-  const sendReply = async (text: string): Promise<void> => {
-    const messageSegments = [{ type: 'text', data: { text: markdownToText(text) } }];
-
-    try {
-      await sendMsg({
-        message_type: isGroup ? 'group' : 'private',
-        group_id: isGroup ? chatId : undefined,
-        user_id: !isGroup ? chatId : undefined,
-        message: messageSegments,
-      })
-      log.info('dispatch', `Sent reply: ${text.slice(0, 100)}`);
-    } catch (error) {
-      log.error('dispatch', `Send failed: ${error}`);
-    }
-  };
-
   const messagesConfig = runtime.channel.reply.resolveEffectiveMessagesConfig(context.cfg, route.agentId);
-  log.info('dispatch', `Messages config: ${JSON.stringify(messagesConfig)}`);
-
-  let hasResponse = false;
 
   try {
     await runtime.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
@@ -210,23 +200,30 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
           mode: "off"
         },
         responsePrefix: messagesConfig.responsePrefix,
+        onReplyStart: async (): Promise<void> => {
+          if (!isGroup) {
+            // 输入状态
+            await setInputStatus({
+              user_id: senderId,
+              event_type: 1
+            });
+          }
+        },
         deliver: async (payload: ReplyPayload, info: { kind: string }): Promise<void> => {
-          hasResponse = true;
           log.info('dispatch', `deliver(${info.kind}): ${JSON.stringify(payload)}`);
           if (payload.text) {
-            await sendReply(payload.text);
+            await sendText(isGroup, chatId, payload.text);
           }
         },
         onError: async (err: unknown): Promise<void> => {
-          hasResponse = true;
           log.error('dispatch', `Dispatch error: ${err}`);
-          await sendReply(`[错误] ${String(err)}`);
+          await sendText(isGroup, chatId, `[错误]\n${String(err)}`);
         },
       },
       replyOptions: {},
     });
 
-    log.info('dispatch', `Dispatch completed, hasResponse: ${hasResponse}`);
+    log.info('dispatch', `Dispatch completed`);
   } catch (error) {
     log.error('dispatch', `Message processing failed: ${error}`);
   } finally {
@@ -346,7 +343,7 @@ export async function handlePokeEvent(
     senderId: String(event.user_id),
     senderName: String(event.user_id),
     messageId: `poke_${event.user_id}_${Date.now()}`,
-    content: `[动作] ${pokeMessage}`,
+    content: `[动作]\n${pokeMessage}`,
     timestamp: Date.now(),
   });
 }

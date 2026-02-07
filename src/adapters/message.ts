@@ -92,7 +92,7 @@ function parseJsonSegment(segment: NapCatJsonSegment): OpenClawJsonContent | Ope
 // NapCat -> OpenClaw Adapters (Inbound)
 // =============================================================================
 
-function napCatToOpenClaw(segment: NapCatMessage,): OpenClawMessage | null {
+function napCatToOpenClaw(segment: NapCatMessage): OpenClawMessage | null {
   const data = segment.data as Record<string, unknown>;
 
   switch (segment.type) {
@@ -162,10 +162,14 @@ function openClawSegmentToNapCat(
     case 'reply':
       return { type: 'reply', data: { id: content.messageId } };
 
+    case 'file':
+      return { type: 'file', data: { file: content.file, url: content.url, file_size: content.fileSize } };
+
     case 'audio':
-      // These types are inbound-only for now
-      log.warn('adapters', `Unsupported outbound type: ${content.type}`);
-      return null;
+      return {
+        type: 'record',
+        data: { file: content.file, path: content.path, url: content.url, file_size: content.fileSize }
+      };
 
     default:
       log.warn('adapters', `Unknown content type (outbound): ${(content as { type: string }).type}`);
@@ -173,12 +177,8 @@ function openClawSegmentToNapCat(
   }
 }
 
-export function openClawToNapCatMessage(content: OpenClawMessage[], replyToId?: string): NapCatMessage[] {
+export function openClawToNapCatMessage(content: OpenClawMessage[]): NapCatMessage[] {
   const segments: NapCatMessage[] = [];
-
-  if (replyToId) {
-    segments.push({ type: 'reply', data: { id: replyToId } });
-  }
 
   for (const item of content) {
     const segment = openClawSegmentToNapCat(item);

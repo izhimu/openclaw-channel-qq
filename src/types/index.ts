@@ -3,8 +3,6 @@
  * Based on NapCat OneBot 11 implementation
  */
 
-export const CHANNEL_ID = 'openclaw-channel-qq'
-
 // =============================================================================
 // NapCat API Request/Response Format
 // =============================================================================
@@ -223,7 +221,9 @@ export interface OpenClawJsonContent {
 
 export interface OpenClawFileContent {
   type: 'file';
-  fileId: string;
+  fileId?: string;
+  file?: string;
+  url?: string;
   fileSize?: number;
 }
 

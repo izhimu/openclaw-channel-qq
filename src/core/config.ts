@@ -4,8 +4,10 @@
 
 import type { OpenClawConfig } from "openclaw/plugin-sdk";
 import { DEFAULT_ACCOUNT_ID } from "openclaw/plugin-sdk";
-import { CHANNEL_ID, QQConfig } from "../types/index.js";
+import type { QQConfig } from "../types/index.js";
 import { z } from "zod";
+
+export const CHANNEL_ID = "qq"
 
 /**
  * 列出所有 QQ 账户ID
