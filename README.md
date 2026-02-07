@@ -61,7 +61,7 @@
 
 ```bash
 # 安装插件
-openclaw plugins install @izhimu/openclaw-channel-qq
+openclaw plugins install @izhimu/qq
 ```
 
 ### 本地开发安装
@@ -78,7 +78,7 @@ npm install
 npm run build
 
 # 安装到 OpenClaw
-openclaw plugins install /path/to/openclaw-channel-qq
+openclaw plugins install /path/to/openclaw-channel-qq 
 ```
 
 ---
