@@ -221,7 +221,9 @@ export interface OpenClawJsonContent {
 
 export interface OpenClawFileContent {
   type: 'file';
-  fileId: string;
+  fileId?: string;
+  file?: string;
+  url?: string;
   fileSize?: number;
 }
 

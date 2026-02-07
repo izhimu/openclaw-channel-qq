@@ -255,6 +255,79 @@ export function getCloseCodeMessage(code: number): string {
   return messages[code] ?? `Unknown close code: ${code}`;
 }
 
+export type FileCategory = 'image' | 'audio' | 'file';
+
+const IMAGE_EXTENSIONS = new Set([
+  'jpg', 'jpeg', 'png', 'gif', 'bmp',
+  'webp', 'svg', 'tiff', 'ico', 'heic'
+]);
+
+const AUDIO_EXTENSIONS = new Set([
+  'mp3',   // 最通用
+  'wav',   // 无损/未压缩
+  'ogg',   // 开源/Web常用
+  'm4a',   // Apple/MPEG-4 音频
+  'aac',   // 高级音频编码
+  'flac',  // 无损压缩
+  'wma',   // Windows Media
+  'aiff',  // Apple Interchange
+  'amr',   // 移动端录音
+  'opus'   // 现代Web流媒体
+]);
+
+export function getFileType(pathOrUrl: string): FileCategory {
+  if (!pathOrUrl) return 'file';
+
+  try {
+    const cleanPath = pathOrUrl.split(/[?#]/)[0];
+
+    const lastDotIndex = cleanPath.lastIndexOf('.');
+
+    if (lastDotIndex === -1) {
+      return 'file';
+    }
+
+    const extension = cleanPath.substring(lastDotIndex + 1).toLowerCase();
+
+    if (IMAGE_EXTENSIONS.has(extension)) {
+      return 'image';
+    }
+
+    if (AUDIO_EXTENSIONS.has(extension)) {
+      return 'audio';
+    }
+
+    return 'file';
+  } catch (error) {
+    return 'file';
+  }
+}
+
+export function getFileName(pathOrUrl: string): string {
+  if (!pathOrUrl) return '';
+
+  try {
+    let cleanPath = pathOrUrl.split(/[?#]/)[0];
+
+    try {
+      cleanPath = decodeURIComponent(cleanPath);
+    } catch (e) {
+    }
+
+    cleanPath = cleanPath.replace(/\\/g, '/');
+
+    if (cleanPath.endsWith('/')) {
+      cleanPath = cleanPath.slice(0, -1);
+    }
+
+    const fileName = cleanPath.split('/').pop();
+
+    return fileName || '';
+  } catch (error) {
+    return '';
+  }
+}
+
 // =============================================================================
 // CQ Code Utilities
 // =============================================================================
