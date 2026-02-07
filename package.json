@@ -1,13 +1,27 @@
 {
-  "name": "@izhimu/openclaw-channel-qq",
-  "version": "1.0.0",
+  "name": "@izhimu/qq",
+  "version": "0.1.0",
   "description": "A QQ channel plugin for OpenClaw using NapCat WebSocket",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "openclaw.plugin.json"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
     "dev": "tsc --watch",
-    "build": "tsc"
+    "build": "tsc",
+    "prepublishOnly": "npm run build",
+    "release:patch": "npm version patch && npm publish --access public",
+    "release:minor": "npm version minor && npm publish --access public",
+    "release:major": "npm version major && npm publish --access public",
+    "release": "npm run release:patch"
   },
   "keywords": [
     "openclaw",
@@ -18,10 +32,10 @@
   "license": "MIT",
   "openclaw": {
     "extensions": [
-      "./index.ts"
+      "./dist/index.js"
     ],
     "install": {
-      "npmSpec": "@izhimu/openclaw-channel-qq",
+      "npmSpec": "@izhimu/qq",
       "localPath": "extensions/qq",
       "defaultChoice": "npm"
     }
