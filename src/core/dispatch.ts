@@ -7,11 +7,10 @@ import type { ReplyPayload } from "openclaw/plugin-sdk";
 import type {
   DispatchMessageMedia,
   DispatchMessageParams,
-  DispatchMessageReply,
   OpenClawMessage,
 } from '../types/index.js';
 import { getRuntime, getContext } from './runtime.js'
-import { getMsg, getFile, sendMsg, setInputStatus } from './request.js'
+import { getFile, sendMsg, setInputStatus } from './request.js'
 import { napCatToOpenClawMessage } from '../adapters/message.js';
 import { Logger as log, markdownToText } from '../utils/index.js';
 import { CHANNEL_ID } from "./config.js";
@@ -23,19 +22,23 @@ import { CHANNEL_ID } from "./config.js";
  */
 async function contentToPlainText(content: OpenClawMessage[]): Promise<string> {
   return content
-    .filter(c => c.type !== 'reply' && c.type !== 'image' && c.type !== 'audio' && c.type !== 'file')
+    .filter(c => c.type !== 'image' && c.type !== 'audio' && c.type !== 'file')
     .map((c) => {
       switch (c.type) {
         case 'text':
-          return `[消息]\n${c.text}`;
+          return `${c.text}`;
         case 'at':
           return c.isAll ? '@全体成员' : `@${c.userId}`;
         case 'json':
           return `[JSON]\n\`\`\`json\n${c.data}\n\`\`\``;
+        case 'reply':
+          let replyContent = `${c.sender}(${c.senderId}):\n${c.message}`;
+          replyContent = replyContent.split('\n').map(line => `> ${line}`).join('\n');
+          return `[回复]\n${replyContent}\n`;
         default:
           return '';
       }
-    }).join('');
+    }).join('\n');
 }
 
 async function contextToMedia(content: OpenClawMessage[]): Promise<DispatchMessageMedia | undefined> {
@@ -74,31 +77,6 @@ async function contextToMedia(content: OpenClawMessage[]): Promise<DispatchMessa
   return;
 }
 
-// TODO弃用
-async function contextToReply(content: OpenClawMessage[]): Promise<DispatchMessageReply | undefined> {
-  const hasReply = content.some(c => c.type === 'reply');
-  if (!hasReply) {
-    return;
-  }
-  const reply = content.find(c => c.type === 'reply');
-  if (!reply) {
-    return;
-  }
-  const response = await getMsg({
-    message_id: Number(reply.messageId),
-  });
-  if (response.data?.message == undefined) {
-    return;
-  }
-  const replyMessage = await napCatToOpenClawMessage(response.data?.message);
-  const text = await contentToPlainText(replyMessage);
-  return {
-    id: reply.messageId,
-    content: text,
-    sender: String(response.data?.sender.user_id)
-  };
-}
-
 async function sendText(isGroup: boolean, chatId: string, text: string): Promise<void> {
   const cleanText = text.replace(/NO_REPLY\s*$/, '');
   const messageSegments = [{ type: 'text', data: { text: markdownToText(cleanText) } }];
@@ -120,7 +98,7 @@ async function sendText(isGroup: boolean, chatId: string, text: string): Promise
  * Dispatch an incoming message to the AI for processing
  */
 export async function dispatchMessage(params: DispatchMessageParams): Promise<void> {
-  const { chatType, chatId, senderId, senderName, messageId, content, media, reply, timestamp } = params;
+  const { chatType, chatId, senderId, senderName, messageId, content, media, timestamp } = params;
 
   const runtime = getRuntime();
   if (!runtime) {
@@ -135,21 +113,21 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
 
   const isGroup = chatType === 'group';
   const peerId = isGroup ? `group:${chatId}` : senderId;
-  const fullContent = `${content}\n\nFrom QQ(${senderId}) - Nickname: ${senderName}`
 
   const route = runtime.channel.routing.resolveAgentRoute({
     cfg: context.cfg,
     channel: CHANNEL_ID,
     peer: {
-      kind: isGroup ? 'group' : 'dm',
+      kind: 'group',
       id: peerId,
     },
   });
+  log.debug('dispatch', `Resolved route: ${JSON.stringify(route)}`)
   const envelopeOptions = runtime.channel.reply.resolveEnvelopeFormatOptions(context.cfg);
   const body = runtime.channel.reply.formatInboundEnvelope({
     channel: CHANNEL_ID,
     from: senderName || senderId,
-    body: fullContent,
+    body: content,
     timestamp,
     chatType: isGroup ? 'group' : 'direct',
     sender: {
@@ -158,34 +136,30 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
     },
     envelope: envelopeOptions,
   });
-  const fromAddress = isGroup ? `qq:group:${chatId}` : `qq:private:${senderId}`;
-  const toAddress = `qq:${route.accountId}`;
+  log.debug('dispatch', `Inbound envelope: ${body}`)
+  const fromAddress = isGroup ? `qq:group:${chatId}` : `qq:${senderId}`;
+  const toAddress = `qq:${chatId}`;
   const ctxPayload = runtime.channel.reply.finalizeInboundContext({
-      Body: body,
-      RawBody: fullContent,
-      CommandBody: fullContent,
-      From: fromAddress,
-      To: toAddress,
-      SessionKey: route.sessionKey,
-      AccountId: route.accountId,
-      ChatType: isGroup ? 'group' : 'direct',
-      SenderId: senderId,
-      SenderName: senderName,
-      Provider: CHANNEL_ID,
-      Surface: CHANNEL_ID,
-      MessageSid: messageId,
-      Timestamp: timestamp,
-      ReplyToId: reply?.id,
-      ReplyToBody: reply?.content,
-      ReplyToSender: reply?.sender,
-      ReplyToIsQuote: !!reply,
-      MediaType: media?.type,
-      MediaPath: media?.path,
-      MediaUrl: media?.url,
-      OriginatingChannel: CHANNEL_ID,
-      OriginatingTo: toAddress,
-    })
-  ;
+    Body: body,
+    RawBody: content,
+    CommandBody: content,
+    From: fromAddress,
+    To: toAddress,
+    SessionKey: route.sessionKey,
+    AccountId: route.accountId,
+    ChatType: isGroup ? 'group' : 'direct',
+    SenderId: senderId,
+    SenderName: senderName,
+    Provider: CHANNEL_ID,
+    Surface: CHANNEL_ID,
+    MessageSid: messageId,
+    Timestamp: timestamp,
+    MediaType: media?.type,
+    MediaPath: media?.path,
+    MediaUrl: media?.url,
+    OriginatingChannel: CHANNEL_ID,
+    OriginatingTo: toAddress,
+  });
 
   log.info('dispatch', `Dispatching to agent ${route.agentId}, session: ${route.sessionKey}`);
 
@@ -259,9 +233,8 @@ export async function handleGroupMessage(
 
   const plainText = await contentToPlainText(content);
   const media = await contextToMedia(content);
-  const reply = await contextToReply(content);
 
-  log.info('dispatch', `Group message from ${event.sender?.nickname || event.sender?.card || event.user_id}: ${plainText}, media: ${media != undefined}, reply: ${reply != undefined}`);
+  log.info('dispatch', `Group message from ${event.sender?.nickname || event.sender?.card || event.user_id}: ${plainText}, media: ${media != undefined}`);
 
   await dispatchMessage({
     chatType: 'group',
@@ -271,7 +244,6 @@ export async function handleGroupMessage(
     messageId: String(event.message_id),
     content: plainText,
     media,
-    reply,
     timestamp: event.time * 1000,
   });
 }
@@ -296,9 +268,8 @@ export async function handlePrivateMessage(
 
   const plainText = await contentToPlainText(content);
   const media = await contextToMedia(content);
-  const reply = await contextToReply(content);
 
-  log.info('dispatch', `Private message from ${event.sender?.nickname || event.user_id}: ${plainText}, media: ${media != undefined}, reply: ${reply != undefined}`);
+  log.info('dispatch', `Private message from ${event.sender?.nickname || event.user_id}: ${plainText}, media: ${media != undefined}`);
 
   await dispatchMessage({
     chatType: 'direct',
@@ -308,7 +279,6 @@ export async function handlePrivateMessage(
     messageId: String(event.message_id),
     content: plainText,
     media,
-    reply,
     timestamp: event.time * 1000,
   });
 }

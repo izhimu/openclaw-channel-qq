@@ -3,7 +3,12 @@
  * Main plugin entry point
  */
 
-import type { ChannelPlugin, ChannelOutboundContext } from "openclaw/plugin-sdk";
+import {
+  ChannelPlugin,
+  ChannelOutboundContext,
+  setAccountEnabledInConfigSection,
+  deleteAccountFromConfigSection
+} from "openclaw/plugin-sdk";
 import { buildChannelConfigSchema, DEFAULT_ACCOUNT_ID } from "openclaw/plugin-sdk";
 import type { QQConfig, ConnectionStatus, OutboundDeliveryResult, OpenClawMessage } from "./types/index.js";
 import {
@@ -38,6 +43,7 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
     selectionLabel: "QQ",
     docsPath: "/channels/qq",
     blurb: "通过 NapCat WebSocket 连接 QQ 机器人",
+    quickstartAllowFrom: true,
   },
   capabilities: {
     chatTypes: ["direct", "group"],
@@ -53,6 +59,20 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
     resolveAccount: (cfg) => resolveQQAccount({ cfg }),
     isEnabled: (account) => Boolean(account?.enabled),
     isConfigured: (account) => Boolean(account?.wsUrl),
+    setAccountEnabled: ({ cfg, accountId, enabled }) =>
+      setAccountEnabledInConfigSection({
+        cfg,
+        sectionKey: "qq",
+        accountId,
+        enabled,
+        allowTopLevel: true,
+      }),
+    deleteAccount: ({ cfg, accountId }) =>
+      deleteAccountFromConfigSection({
+        cfg,
+        sectionKey: "qq",
+        accountId,
+      }),
   },
   configSchema: buildChannelConfigSchema(QQConfigSchema),
   messaging: {
