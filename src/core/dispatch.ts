@@ -34,7 +34,7 @@ async function contentToPlainText(content: OpenClawMessage[]): Promise<string> {
         case 'reply':
           let replyContent = `${c.sender}(${c.senderId}):\n${c.message}`;
           replyContent = replyContent.split('\n').map(line => `> ${line}`).join('\n');
-          return `[回复]\n${replyContent}`;
+          return `[回复]\n${replyContent}\n`;
         default:
           return '';
       }
