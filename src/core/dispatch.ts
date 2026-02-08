@@ -38,7 +38,7 @@ async function contentToPlainText(content: OpenClawMessage[]): Promise<string> {
         default:
           return '';
       }
-    }).join('');
+    }).join('\n');
 }
 
 async function contextToMedia(content: OpenClawMessage[]): Promise<DispatchMessageMedia | undefined> {
