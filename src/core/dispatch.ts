@@ -26,7 +26,7 @@ async function contentToPlainText(content: OpenClawMessage[]): Promise<string> {
     .map((c) => {
       switch (c.type) {
         case 'text':
-          return `[消息]\n${c.text}`;
+          return `${c.text}`;
         case 'at':
           return c.isAll ? '@全体成员' : `@${c.userId}`;
         case 'json':
@@ -113,13 +113,12 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
 
   const isGroup = chatType === 'group';
   const peerId = isGroup ? `group:${chatId}` : senderId;
-  const fullContent = `${content}\n\nFrom ${senderName}(${senderId})`
 
   const route = runtime.channel.routing.resolveAgentRoute({
     cfg: context.cfg,
     channel: CHANNEL_ID,
     peer: {
-      kind: isGroup ? 'group' : 'dm',
+      kind: 'group',
       id: peerId,
     },
   });
@@ -128,7 +127,7 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
   const body = runtime.channel.reply.formatInboundEnvelope({
     channel: CHANNEL_ID,
     from: senderName || senderId,
-    body: fullContent,
+    body: content,
     timestamp,
     chatType: isGroup ? 'group' : 'direct',
     sender: {
@@ -138,12 +137,12 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
     envelope: envelopeOptions,
   });
   log.debug('dispatch', `Inbound envelope: ${body}`)
-  const fromAddress = isGroup ? `qq:group:${chatId}` : `qq:private:${senderId}`;
-  const toAddress = `qq:${route.accountId}`;
+  const fromAddress = isGroup ? `qq:group:${chatId}` : `qq:${senderId}`;
+  const toAddress = `qq:${chatId}`;
   const ctxPayload = runtime.channel.reply.finalizeInboundContext({
     Body: body,
-    RawBody: fullContent,
-    CommandBody: fullContent,
+    RawBody: content,
+    CommandBody: content,
     From: fromAddress,
     To: toAddress,
     SessionKey: route.sessionKey,

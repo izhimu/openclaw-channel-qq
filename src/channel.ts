@@ -43,6 +43,7 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
     selectionLabel: "QQ",
     docsPath: "/channels/qq",
     blurb: "通过 NapCat WebSocket 连接 QQ 机器人",
+    quickstartAllowFrom: true,
   },
   capabilities: {
     chatTypes: ["direct", "group"],
