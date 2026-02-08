@@ -12,6 +12,7 @@ import type {
 } from '../types/index.js';
 import { Logger as log, extractImageUrl, getEmojiForFaceId } from '../utils/index.js';
 import { CQCodeUtils, type CQNode } from '../utils/cqcode.js';
+import { getMsg } from "../core/request.js";
 
 // =============================================================================
 // CQ Code Parsing
@@ -92,7 +93,7 @@ function parseJsonSegment(segment: NapCatJsonSegment): OpenClawJsonContent | Ope
 // NapCat -> OpenClaw Adapters (Inbound)
 // =============================================================================
 
-function napCatToOpenClaw(segment: NapCatMessage): OpenClawMessage | null {
+async function napCatToOpenClaw(segment: NapCatMessage): Promise<OpenClawMessage | null> {
   const data = segment.data as Record<string, unknown>;
 
   switch (segment.type) {
@@ -112,7 +113,19 @@ function napCatToOpenClaw(segment: NapCatMessage): OpenClawMessage | null {
     }
 
     case 'reply':
-      return { type: 'reply', messageId: String(data.id || '') };
+      const response = await getMsg({
+        message_id: Number(data.id),
+      });
+      if (response.data?.message == undefined) {
+        return null;
+      }
+      return {
+        type: 'reply',
+        messageId: String(data.id),
+        message: response.data.raw_message,
+        senderId: String(response.data.sender.user_id),
+        sender: response.data.sender.nickname
+      };
 
     case 'face':
       return { type: 'text', text: getEmojiForFaceId(String(data.id || '')) };
@@ -196,7 +209,7 @@ export async function napCatToOpenClawMessage(segments: NapCatMessage[] | string
   const content: OpenClawMessage[] = [];
 
   for (const segment of normalized) {
-    const result = napCatToOpenClaw(segment);
+    const result = await napCatToOpenClaw(segment);
     if (result) {
       content.push(result);
     }

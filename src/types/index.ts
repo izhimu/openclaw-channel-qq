@@ -197,6 +197,9 @@ export interface OpenClawImageContent {
 export interface OpenClawReplyContent {
   type: 'reply';
   messageId: string;
+  message?: string;
+  senderId?: string;
+  sender?: string;
 }
 
 export interface OpenClawAudioContent {
@@ -363,12 +366,6 @@ export interface DispatchMessageMedia {
   url?: string;
 }
 
-export interface DispatchMessageReply {
-  id?: string;
-  content?: string;
-  sender?: string;
-}
-
 export interface DispatchMessageParams {
   chatType: 'direct' | 'group';
   chatId: string;
@@ -377,6 +374,5 @@ export interface DispatchMessageParams {
   messageId: string;
   content: string;
   media?: DispatchMessageMedia;
-  reply?: DispatchMessageReply;
   timestamp: number;
 }
