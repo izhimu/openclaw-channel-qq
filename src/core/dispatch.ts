@@ -123,6 +123,7 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
       id: peerId,
     },
   });
+  log.debug('dispatch', `Resolved route: ${JSON.stringify(route)}`)
   const envelopeOptions = runtime.channel.reply.resolveEnvelopeFormatOptions(context.cfg);
   const body = runtime.channel.reply.formatInboundEnvelope({
     channel: CHANNEL_ID,
@@ -136,30 +137,30 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
     },
     envelope: envelopeOptions,
   });
+  log.debug('dispatch', `Inbound envelope: ${body}`)
   const fromAddress = isGroup ? `qq:group:${chatId}` : `qq:private:${senderId}`;
   const toAddress = `qq:${route.accountId}`;
   const ctxPayload = runtime.channel.reply.finalizeInboundContext({
-      Body: body,
-      RawBody: fullContent,
-      CommandBody: fullContent,
-      From: fromAddress,
-      To: toAddress,
-      SessionKey: route.sessionKey,
-      AccountId: route.accountId,
-      ChatType: isGroup ? 'group' : 'direct',
-      SenderId: senderId,
-      SenderName: senderName,
-      Provider: CHANNEL_ID,
-      Surface: CHANNEL_ID,
-      MessageSid: messageId,
-      Timestamp: timestamp,
-      MediaType: media?.type,
-      MediaPath: media?.path,
-      MediaUrl: media?.url,
-      OriginatingChannel: CHANNEL_ID,
-      OriginatingTo: toAddress,
-    })
-  ;
+    Body: body,
+    RawBody: fullContent,
+    CommandBody: fullContent,
+    From: fromAddress,
+    To: toAddress,
+    SessionKey: route.sessionKey,
+    AccountId: route.accountId,
+    ChatType: isGroup ? 'group' : 'direct',
+    SenderId: senderId,
+    SenderName: senderName,
+    Provider: CHANNEL_ID,
+    Surface: CHANNEL_ID,
+    MessageSid: messageId,
+    Timestamp: timestamp,
+    MediaType: media?.type,
+    MediaPath: media?.path,
+    MediaUrl: media?.url,
+    OriginatingChannel: CHANNEL_ID,
+    OriginatingTo: toAddress,
+  });
 
   log.info('dispatch', `Dispatching to agent ${route.agentId}, session: ${route.sessionKey}`);
 
