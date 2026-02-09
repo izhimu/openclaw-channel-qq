@@ -33,7 +33,7 @@ import {
   resolveQQAccount,
   QQConfigSchema, CHANNEL_ID
 } from "./core/config.js";
-import { eventListener, sendMsg } from "./core/request.js"
+import { eventListener, sendMsg, getStatus } from "./core/request.js"
 import { qqOnboardingAdapter } from "./onboarding.js";
 
 export const qqPlugin: ChannelPlugin<QQConfig> = {
@@ -97,6 +97,15 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
     sendMedia: outboundSend,
   },
   status: {
+    defaultRuntime: {
+      accountId: DEFAULT_ACCOUNT_ID,
+      running: false,
+      connected: false,
+      lastConnectedAt: null,
+      lastStartAt: null,
+      lastStopAt: null,
+      lastError: null,
+    },
     buildAccountSnapshot: ({ account, runtime }) => {
       return {
         accountId: DEFAULT_ACCOUNT_ID,
@@ -162,6 +171,23 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
       clearContext()
     },
   },
+  heartbeat: {
+    checkReady: async () => {
+      const status = await getStatus();
+      if (status.status === "ok" && status.data?.online && status.data?.good) {
+        return {
+          ok: true,
+          reason: 'ok'
+        }
+      } else {
+        log.warn('heartbeat', `Heartbeat failed, status: ${status.status}, data: ${status.data}`);
+        return {
+          ok: false,
+          reason: status.msg
+        }
+      }
+    }
+  }
 };
 
 async function outboundSend(ctx: ChannelOutboundContext): Promise<OutboundDeliveryResult> {

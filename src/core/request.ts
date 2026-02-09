@@ -1,8 +1,8 @@
-import type {
+import {
   GetFileReq,
   GetFileResp,
   GetMsgReq,
-  GetMsgResp,
+  GetMsgResp, GetStatusResp,
   NapCatResp,
   SendMsgReq,
   SendMsgResp,
@@ -134,4 +134,13 @@ export async function setInputStatus(params: SetInputStatusReq): Promise<NapCatR
     return failResp();
   }
   return connection.sendRequest("set_input_status", params)
+}
+
+export async function getStatus(): Promise<NapCatResp<GetStatusResp>> {
+  const connection = getConnection();
+  if (!connection) {
+    log.warn("request", `No connection available`);
+    return failResp();
+  }
+  return connection.sendRequest("get_status")
 }

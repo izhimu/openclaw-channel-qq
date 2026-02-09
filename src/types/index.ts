@@ -360,6 +360,12 @@ export interface SetInputStatusReq {
   event_type: 0 | 1 | 2;
 }
 
+export interface GetStatusResp {
+  online: boolean;
+  good: boolean;
+  stat: string;
+}
+
 export interface DispatchMessageMedia {
   type?: string;
   path?: string;
