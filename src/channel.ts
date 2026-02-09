@@ -13,6 +13,7 @@ import { buildChannelConfigSchema, DEFAULT_ACCOUNT_ID } from "openclaw/plugin-sd
 import type { QQConfig, ConnectionStatus, OutboundDeliveryResult, OpenClawMessage } from "./types/index.js";
 import {
   messageIdToString,
+  markdownToText,
   getFileType,
   getFileName,
   Logger as log
@@ -177,7 +178,7 @@ async function outboundSend(ctx: ChannelOutboundContext): Promise<OutboundDelive
   const content: OpenClawMessage[] = []
 
   if (text) {
-    content.push({ type: "text", text })
+    content.push({ type: "text", text: markdownToText(text) })
   }
   if (mediaUrl) {
     switch (getFileType(mediaUrl)) {
