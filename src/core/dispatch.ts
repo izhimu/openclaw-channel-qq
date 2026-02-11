@@ -8,7 +8,7 @@ import type {
   DispatchMessageMedia,
   DispatchMessageParams,
   OpenClawMessage,
-} from '../types/index.js';
+} from '../types';
 import { getRuntime, getContext } from './runtime.js'
 import { getFile, sendMsg, setInputStatus } from './request.js'
 import { napCatToOpenClawMessage, openClawToNapCatMessage } from '../adapters/message.js';
@@ -216,8 +216,12 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
         },
         deliver: async (payload: ReplyPayload, info: { kind: string }): Promise<void> => {
           log.info('dispatch', `deliver(${info.kind}): ${JSON.stringify(payload)}`);
-          if (payload.text) {
+
+          if (payload.text && !payload.text.startsWith('MEDIA:')) {
             await sendText(isGroup, chatId, payload.text);
+          }
+          if (payload.text && payload.text.startsWith('MEDIA:')){
+            await sendMedia(isGroup, chatId, payload.text.replace('MEDIA:', ''));
           }
           if (payload.mediaUrl) {
             await sendMedia(isGroup, chatId, payload.mediaUrl);
