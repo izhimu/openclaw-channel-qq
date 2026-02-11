@@ -11,8 +11,8 @@ import type {
 } from '../types/index.js';
 import { getRuntime, getContext } from './runtime.js'
 import { getFile, sendMsg, setInputStatus } from './request.js'
-import { napCatToOpenClawMessage } from '../adapters/message.js';
-import { Logger as log, markdownToText } from '../utils/index.js';
+import { napCatToOpenClawMessage, openClawToNapCatMessage } from '../adapters/message.js';
+import { getFileName, getFileType, Logger as log, markdownToText } from '../utils/index.js';
 import { CHANNEL_ID } from "./config.js";
 
 /**
@@ -89,6 +89,37 @@ async function sendText(isGroup: boolean, chatId: string, text: string): Promise
       message: messageSegments,
     })
     log.info('dispatch', `Sent reply: ${text.slice(0, 100)}`);
+  } catch (error) {
+    log.error('dispatch', `Send failed: ${error}`);
+  }
+}
+
+async function sendMedia(isGroup: boolean, chatId: string, mediaUrl: string): Promise<void> {
+  let content: OpenClawMessage[] = [];
+  switch (getFileType(mediaUrl)) {
+    case "image":
+      content.push({ type: "image", url: mediaUrl.trim() })
+      break;
+    case "audio":
+      content.push({ type: "audio", path: mediaUrl.trim(), url: mediaUrl.trim(), file: getFileName(mediaUrl.trim()) })
+      break;
+    default:
+      content.push({ type: "file", url: mediaUrl.trim(), file: getFileName(mediaUrl.trim()) })
+  }
+
+  if (content.length === 0) {
+    log.warn('dispatch', `No media found in message`);
+    return;
+  }
+
+  try {
+    await sendMsg({
+      message_type: isGroup ? 'group' : 'private',
+      group_id: isGroup ? chatId : undefined,
+      user_id: !isGroup ? chatId : undefined,
+      message: openClawToNapCatMessage(content),
+    });
+    log.info('dispatch', `Sent reply: ${mediaUrl.slice(0, 100)}`);
   } catch (error) {
     log.error('dispatch', `Send failed: ${error}`);
   }
@@ -187,6 +218,14 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
           log.info('dispatch', `deliver(${info.kind}): ${JSON.stringify(payload)}`);
           if (payload.text) {
             await sendText(isGroup, chatId, payload.text);
+          }
+          if (payload.mediaUrl) {
+            await sendMedia(isGroup, chatId, payload.mediaUrl);
+          }
+          if (payload.mediaUrls && payload.mediaUrls.length > 0) {
+            for (const mediaUrl of payload.mediaUrls) {
+              await sendMedia(isGroup, chatId, mediaUrl);
+            }
           }
         },
         onError: async (err: unknown): Promise<void> => {
