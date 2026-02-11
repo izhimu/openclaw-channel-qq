@@ -97,13 +97,35 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
     sendMedia: outboundSend,
   },
   status: {
-    buildAccountSnapshot: ({ account, runtime }) => {
+    defaultRuntime: {
+      accountId: DEFAULT_ACCOUNT_ID,
+      running: false,
+      lastStartAt: null,
+      lastStopAt: null,
+      lastError: null,
+    },
+    buildChannelSummary: ({ snapshot }) => ({
+      configured: snapshot.configured ?? false,
+      running: snapshot.running ?? false,
+      lastStartAt: snapshot.lastStartAt ?? null,
+      lastStopAt: snapshot.lastStopAt ?? null,
+      lastError: snapshot.lastError ?? null,
+      probe: snapshot.probe,
+      lastProbeAt: snapshot.lastProbeAt ?? null,
+    }),
+    buildAccountSnapshot: ({ account, runtime, probe }) => {
       return {
         accountId: DEFAULT_ACCOUNT_ID,
-        name: CHANNEL_ID,
+        name: "QQ",
         enabled: account.enabled,
-        configured: Boolean(account.wsUrl),
-        ...runtime,
+        configured: Boolean(account.wsUrl?.trim()),
+        running: runtime?.running ?? false,
+        lastStartAt: runtime?.lastStartAt ?? null,
+        lastStopAt: runtime?.lastStopAt ?? null,
+        lastError: runtime?.lastError ?? null,
+        probe,
+        lastInboundAt: runtime?.lastInboundAt ?? null,
+        lastOutboundAt: runtime?.lastOutboundAt ?? null,
       };
     },
   },
