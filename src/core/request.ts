@@ -36,7 +36,7 @@ export async function eventListener(event: any): Promise<void> {
   switch (event.post_type) {
     case "message":
       // 过滤空消息
-      if (!event.message || !Array.isArray(event.message) || event.message.length === 0) {
+      if (!event.raw_message || event.raw_message === '') {
         log.debug("request", `Ignored empty message`);
         break;
       }
