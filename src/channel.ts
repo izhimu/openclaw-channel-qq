@@ -131,6 +131,7 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
     probeAccount: async (): Promise<QQProbe> => {
       const status = await getStatus();
       setContextStatus({
+        running: true,
         lastProbeAt: Date.now(),
       });
       return {
