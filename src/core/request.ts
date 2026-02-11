@@ -2,12 +2,12 @@ import type {
   GetFileReq,
   GetFileResp,
   GetMsgReq,
-  GetMsgResp,
+  GetMsgResp, GetStatusResp,
   NapCatResp,
   SendMsgReq,
   SendMsgResp,
   SetInputStatusReq
-} from "../types/index.js";
+} from "../types";
 import { Logger as log } from "../utils/index.js"
 import { setContextStatus, getContext, getConnection } from "./runtime.js"
 import { handleGroupMessage, handlePrivateMessage, handlePokeEvent } from "./dispatch.js";
@@ -140,4 +140,16 @@ export async function setInputStatus(params: SetInputStatusReq): Promise<NapCatR
     return failResp();
   }
   return connection.sendRequest("set_input_status", params)
+}
+
+/**
+ * 获取状态
+ */
+export async function getStatus(): Promise<NapCatResp<GetStatusResp>> {
+  const connection = getConnection();
+  if (!connection) {
+    log.warn("request", `No connection available`);
+    return failResp();
+  }
+  return connection.sendRequest("get_status")
 }

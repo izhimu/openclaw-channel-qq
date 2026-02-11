@@ -3,14 +3,14 @@
  * Main plugin entry point
  */
 
+import type { ChannelPlugin, ChannelOutboundContext } from "openclaw/plugin-sdk";
 import {
-  ChannelPlugin,
-  ChannelOutboundContext,
+  buildChannelConfigSchema,
   setAccountEnabledInConfigSection,
-  deleteAccountFromConfigSection
+  deleteAccountFromConfigSection,
+  DEFAULT_ACCOUNT_ID
 } from "openclaw/plugin-sdk";
-import { buildChannelConfigSchema, DEFAULT_ACCOUNT_ID } from "openclaw/plugin-sdk";
-import type { QQConfig, ConnectionStatus, OutboundDeliveryResult, OpenClawMessage } from "./types/index.js";
+import type { QQConfig, ConnectionStatus, OutboundDeliveryResult, OpenClawMessage, QQProbe } from "./types";
 import {
   messageIdToString,
   markdownToText,
@@ -33,7 +33,7 @@ import {
   resolveQQAccount,
   QQConfigSchema, CHANNEL_ID
 } from "./core/config.js";
-import { eventListener, sendMsg } from "./core/request.js"
+import { eventListener, sendMsg, getStatus } from "./core/request.js"
 import { qqOnboardingAdapter } from "./onboarding.js";
 
 export const qqPlugin: ChannelPlugin<QQConfig> = {
@@ -99,33 +99,62 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
   status: {
     defaultRuntime: {
       accountId: DEFAULT_ACCOUNT_ID,
+      name: "QQ",
+      enabled: false,
+      configured: false,
+      linked: false,
       running: false,
+      connected: false,
+      lastConnectedAt: null,
       lastStartAt: null,
       lastStopAt: null,
       lastError: null,
+      lastInboundAt: null,
+      lastOutboundAt: null,
     },
     buildChannelSummary: ({ snapshot }) => ({
+      enabled: snapshot.enabled ?? false,
       configured: snapshot.configured ?? false,
+      linked: snapshot.linked ?? false,
       running: snapshot.running ?? false,
+      connected: snapshot.connected ?? false,
+      lastConnectedAt: snapshot.lastConnectedAt ?? null,
       lastStartAt: snapshot.lastStartAt ?? null,
       lastStopAt: snapshot.lastStopAt ?? null,
       lastError: snapshot.lastError ?? null,
+      lastInboundAt: snapshot.lastInboundAt ?? null,
+      lastOutboundAt: snapshot.lastOutboundAt ?? null,
       probe: snapshot.probe,
       lastProbeAt: snapshot.lastProbeAt ?? null,
+
     }),
+    probeAccount: async (): Promise<QQProbe> => {
+      const status = await getStatus();
+      setContextStatus({
+        lastProbeAt: Date.now(),
+      });
+      return {
+        ok: status.status === "ok",
+        status: status.retcode,
+        error: status.status === "failed" ? status.msg : null,
+      }
+    },
     buildAccountSnapshot: ({ account, runtime, probe }) => {
       return {
         accountId: DEFAULT_ACCOUNT_ID,
         name: "QQ",
-        enabled: account.enabled,
+        enabled: account.enabled ?? false,
         configured: Boolean(account.wsUrl?.trim()),
+        linked: runtime?.linked ?? false,
         running: runtime?.running ?? false,
+        connected: runtime?.connected ?? false,
         lastStartAt: runtime?.lastStartAt ?? null,
         lastStopAt: runtime?.lastStopAt ?? null,
         lastError: runtime?.lastError ?? null,
-        probe,
         lastInboundAt: runtime?.lastInboundAt ?? null,
         lastOutboundAt: runtime?.lastOutboundAt ?? null,
+        probe,
+        lastProbeAt: runtime?.lastProbeAt ?? null,
       };
     },
   },
@@ -137,8 +166,7 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
       log.info('gateway', `Starting gateway`);
 
       // Update start time
-      ctx.setStatus({
-        ...ctx.getStatus(),
+      setContextStatus({
         running: true,
         lastStartAt: Date.now(),
       });
@@ -151,11 +179,13 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
         log.info('gateway', `State: ${status.state}`);
         if (status.state === "connected") {
           setContextStatus({
+            linked: true,
             connected: true,
             lastConnectedAt: Date.now(),
           });
         } else if (status.state === "disconnected" || status.state === "failed") {
           setContextStatus({
+            linked: false,
             connected: false,
             lastError: status.error,
           });
@@ -177,6 +207,7 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
       }
 
       setContextStatus({
+        linked: false,
         running: false,
         connected: false,
         lastStopAt: Date.now(),

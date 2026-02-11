@@ -360,6 +360,12 @@ export interface SetInputStatusReq {
   event_type: 0 | 1 | 2;
 }
 
+export interface GetStatusResp {
+  online: boolean;
+  good: boolean;
+  stat: Record<any, any>;
+}
+
 export interface DispatchMessageMedia {
   type?: string;
   path?: string;
@@ -376,3 +382,9 @@ export interface DispatchMessageParams {
   media?: DispatchMessageMedia;
   timestamp: number;
 }
+
+export type QQProbe = {
+  ok: boolean;
+  status?: number | null;
+  error?: string | null;
+};
