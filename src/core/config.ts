@@ -4,7 +4,7 @@
 
 import type { OpenClawConfig } from "openclaw/plugin-sdk";
 import { DEFAULT_ACCOUNT_ID } from "openclaw/plugin-sdk";
-import type { QQConfig } from "../types/index.js";
+import type { QQConfig } from "../types";
 import { z } from "zod";
 
 export const CHANNEL_ID = "qq"
@@ -37,8 +37,17 @@ export function resolveQQAccount(params: {
   };
 }
 
+/**
+ * Custom Zod refinement to validate WebSocket URL format
+ */
+const wsUrlRegex = /^wss?:\/\/[\w.-]+(:\d+)?(\/[\w./-]*)?$/;
+
+const wsUrlSchema = z.string()
+  .regex(wsUrlRegex, { message: "Invalid WebSocket URL format. Expected: ws://host:port or wss://host:port" })
+  .default("ws://127.0.0.1:3001");
+
 export const QQConfigSchema = z.object({
-  wsUrl: z.string().default("ws://127.0.0.1:3001"),
+  wsUrl: wsUrlSchema,
   accessToken: z.string().default("access-token"),
   enable: z.boolean().default(true)
 });

@@ -2,24 +2,27 @@
  * Utility functions for QQ NapCat plugin
  */
 
+import { randomUUID } from 'crypto';
+import type { OpenClawMessage } from '../types';
+
 // =============================================================================
 // ID Generation
 // =============================================================================
 
-let idCounter = 0;
-
 /**
  * Generate a unique message ID for OpenClaw
+ * Uses UUID for thread-safe and collision-free ID generation
  */
 export function generateMessageId(): string {
-  return `qq-${Date.now()}-${++idCounter}`;
+  return `qq-${randomUUID()}`;
 }
 
 /**
  * Generate a unique echo ID for request correlation
+ * Uses UUID for thread-safe and collision-free ID generation
  */
 export function generateEchoId(): string {
-  return `echo-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  return `echo-${randomUUID()}`;
 }
 
 // =============================================================================
@@ -325,6 +328,36 @@ export function getFileName(pathOrUrl: string): string {
     return fileName || '';
   } catch (error) {
     return '';
+  }
+}
+
+// =============================================================================
+// Media Message Builder
+// =============================================================================
+
+/**
+ * Build an OpenClawMessage from a media URL
+ * Automatically detects file type (image, audio, or file)
+ */
+export function buildMediaMessage(mediaUrl: string): OpenClawMessage {
+  const trimmedUrl = mediaUrl.trim();
+
+  switch (getFileType(trimmedUrl)) {
+    case "image":
+      return { type: "image", url: trimmedUrl };
+    case "audio":
+      return {
+        type: "audio",
+        path: trimmedUrl,
+        url: trimmedUrl,
+        file: getFileName(trimmedUrl)
+      };
+    default:
+      return {
+        type: "file",
+        url: trimmedUrl,
+        file: getFileName(trimmedUrl)
+      };
   }
 }
 

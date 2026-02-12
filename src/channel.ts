@@ -14,8 +14,7 @@ import type { QQConfig, ConnectionStatus, OutboundDeliveryResult, OpenClawMessag
 import {
   messageIdToString,
   markdownToText,
-  getFileType,
-  getFileName,
+  buildMediaMessage,
   Logger as log
 } from "./utils/index.js";
 import {
@@ -105,6 +104,7 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
       linked: false,
       running: false,
       connected: false,
+      reconnectAttempts: 0,
       lastConnectedAt: null,
       lastStartAt: null,
       lastStopAt: null,
@@ -118,6 +118,7 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
       linked: snapshot.linked ?? false,
       running: snapshot.running ?? false,
       connected: snapshot.connected ?? false,
+      reconnectAttempts: snapshot.reconnectAttempts ?? 0,
       lastConnectedAt: snapshot.lastConnectedAt ?? null,
       lastStartAt: snapshot.lastStartAt ?? null,
       lastStopAt: snapshot.lastStopAt ?? null,
@@ -149,6 +150,7 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
         linked: runtime?.linked ?? false,
         running: runtime?.running ?? false,
         connected: runtime?.connected ?? false,
+        reconnectAttempts: runtime?.reconnectAttempts ?? 0,
         lastStartAt: runtime?.lastStartAt ?? null,
         lastStopAt: runtime?.lastStopAt ?? null,
         lastError: runtime?.lastError ?? null,
@@ -189,6 +191,14 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
             lastError: status.error,
           });
         }
+      });
+      connection.on("reconnecting", (info: { reason: string; totalAttempts: number }) => {
+        log.info('gateway', `Reconnecting: ${info.reason}, attempt ${info.totalAttempts}`);
+        setContextStatus({
+          connected: false,
+          lastError: `Reconnecting (${info.reason})`,
+          reconnectAttempts: info.totalAttempts,
+        });
       });
 
       await connection.start();
@@ -255,16 +265,7 @@ async function outboundSend(ctx: ChannelOutboundContext): Promise<OutboundDelive
     content.push({ type: "text", text: markdownToText(text) })
   }
   if (mediaUrl) {
-    switch (getFileType(mediaUrl)) {
-      case "image":
-        content.push({ type: "image", url: mediaUrl.trim() })
-        break;
-      case "audio":
-        content.push({ type: "audio", path: mediaUrl.trim(), url: mediaUrl.trim(), file: getFileName(mediaUrl.trim()) })
-        break;
-      default:
-        content.push({ type: "file", url: mediaUrl.trim(), file: getFileName(mediaUrl.trim()) })
-    }
+    content.push(buildMediaMessage(mediaUrl))
   }
   if (replyToId) {
     content.push({ type: "reply", messageId: replyToId })

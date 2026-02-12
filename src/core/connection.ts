@@ -15,7 +15,7 @@ import type {
   ConnectionStatus,
   PendingRequest,
   HealthStatus, NapCatAction,
-} from '../types/index.js';
+} from '../types';
 import {
   Logger as log,
   generateEchoId,
@@ -25,6 +25,8 @@ import {
 
 const MAX_RECONNECT_ATTEMPTS = -1;
 const REQUEST_TIMEOUT = 30000; // 30 seconds
+const HEARTBEAT_TIMEOUT = 60000; // 60 seconds - time without heartbeat before reconnecting
+const HEARTBEAT_CHECK_INTERVAL = 30000; // 30 seconds - how often to check for heartbeat timeout
 
 /**
  * Connection Manager for a single NapCat account
@@ -36,13 +38,11 @@ export class ConnectionManager extends EventEmitter {
 
   // Heartbeat - active ping + OneBot 11 meta_event based
   private lastHeartbeatTime = 0;
-
-  // Connection stats
-  private totalReconnectAttempts = 0;
+  private heartbeatCheckTimer?: NodeJS.Timeout;
 
   // Reconnection
   private reconnectTimer?: NodeJS.Timeout;
-  private reconnectAttempts = 0;
+  private totalReconnectAttempts = 0;
   private shouldReconnect = true;
 
   // Pending requests
@@ -74,7 +74,6 @@ export class ConnectionManager extends EventEmitter {
     }
 
     this.shouldReconnect = true;
-    this.reconnectAttempts = 0;
     await this.connect();
     log.info('connection', `Started connection`)
   }
@@ -103,13 +102,27 @@ export class ConnectionManager extends EventEmitter {
     try {
       // Build WebSocket URL with access_token query parameter (NapCat OneBot 11 standard)
       let wsUrl = this.config.wsUrl;
-      if (this.config.accessToken) {
-        const url = new URL(wsUrl);
-        url.searchParams.set('access_token', this.config.accessToken);
-        wsUrl = url.toString();
+
+      // Validate URL format before processing
+      if (!wsUrl || !wsUrl.match(/^wss?:\/\//)) {
+        log.error('connection', `Invalid WebSocket URL: ${wsUrl}`)
+        return;
       }
 
-      log.info('connection', `Connecting to ${wsUrl}`);
+      if (this.config.accessToken) {
+        try {
+          const url = new URL(wsUrl);
+          url.searchParams.set('access_token', this.config.accessToken);
+          wsUrl = url.toString();
+        } catch (urlError) {
+          log.error('connection', `Failed to parse WebSocket URL: ${wsUrl}`)
+          return;
+        }
+      }
+
+      // Sanitize URL for logging (hide access token)
+      const sanitizedUrl = wsUrl.replace(/access_token=[^&]+/, 'access_token=***');
+      log.info('connection', `Connecting to ${sanitizedUrl}`);
 
       this.ws = new WebSocket(wsUrl);
 
@@ -142,9 +155,89 @@ export class ConnectionManager extends EventEmitter {
   }
 
   /**
+   * Clear all pending requests and reject them with an error
+   */
+  private clearPendingRequests(reason: string): void {
+    if (this.pendingRequests.size === 0) {
+      return;
+    }
+
+    log.debug('connection', `Clearing ${this.pendingRequests.size} pending requests: ${reason}`);
+
+    for (const [_echo, pending] of this.pendingRequests) {
+      clearTimeout(pending.timeout);
+      pending.reject(new Error(`Connection closed: ${reason}`));
+    }
+
+    this.pendingRequests.clear();
+  }
+
+  // ==========================================================================
+  // Heartbeat Timeout Detection
+  // ==========================================================================
+
+  /**
+   * Start heartbeat timeout detection
+   */
+  private startHeartbeatCheck(): void {
+    this.stopHeartbeatCheck();
+
+    this.heartbeatCheckTimer = setInterval(() => {
+      const elapsed = Date.now() - this.lastHeartbeatTime;
+
+      if (elapsed > HEARTBEAT_TIMEOUT && this.isConnected()) {
+        log.warn('connection', `Heartbeat timeout (${elapsed}ms since last heartbeat), reconnecting...`);
+        this.healthStatus = {
+          healthy: false,
+          lastHeartbeatAt: this.lastHeartbeatTime,
+          consecutiveFailures: this.healthStatus.consecutiveFailures + 1,
+        };
+        this.emit('heartbeat', this.healthStatus);
+
+        // Close connection and trigger immediate reconnect
+        this.close('Heartbeat timeout').then(() => {
+          if (this.shouldReconnect) {
+            // Increment total reconnect attempts
+            this.totalReconnectAttempts++;
+
+            // Emit reconnecting event for external status updates
+            this.emit('reconnecting', {
+              reason: 'heartbeat-timeout',
+              totalAttempts: this.totalReconnectAttempts,
+            });
+
+            this.connect().catch(error => {
+              log.error('connection', `Reconnect failed:`, error);
+            });
+          }
+        });
+      }
+    }, HEARTBEAT_CHECK_INTERVAL);
+
+    log.debug('connection', 'Started heartbeat timeout detection');
+  }
+
+  /**
+   * Stop heartbeat timeout detection
+   */
+  private stopHeartbeatCheck(): void {
+    if (this.heartbeatCheckTimer) {
+      clearInterval(this.heartbeatCheckTimer);
+      this.heartbeatCheckTimer = undefined;
+      log.debug('connection', 'Stopped heartbeat timeout detection');
+    }
+  }
+
+  /**
    * Close WebSocket connection
    */
   private async close(reason: string): Promise<void> {
+    // Stop heartbeat detection
+    this.stopHeartbeatCheck();
+
+    // Clear all pending requests before closing connection
+    this.clearPendingRequests(reason);
+
     if (this.ws) {
       log.info('connection', `Closing connection: ${reason}`);
 
@@ -166,8 +259,8 @@ export class ConnectionManager extends EventEmitter {
   private handleOpen(): void {
     log.info('connection', `Connected to NapCat`);
     this.setState('connected');
-    this.totalReconnectAttempts += this.reconnectAttempts;
-    this.reconnectAttempts = 0;
+    // Start heartbeat timeout detection
+    this.startHeartbeatCheck();
     this.emit('connected');
   }
 
@@ -281,19 +374,19 @@ export class ConnectionManager extends EventEmitter {
       return;
     }
 
-    if (MAX_RECONNECT_ATTEMPTS != -1 && this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+    if (MAX_RECONNECT_ATTEMPTS != -1 && this.totalReconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
       log.error('connection', `Max reconnect attempts reached`);
       this.setState('failed', 'Max reconnect attempts reached');
       this.emit('max-reconnect-attempts-reached');
       return;
     }
 
-    const delayMs = calculateBackoff(this.reconnectAttempts);
-    log.info('connection', `Scheduling reconnect in ${delayMs}ms (attempt ${this.reconnectAttempts + 1}/${MAX_RECONNECT_ATTEMPTS})`);
+    const delayMs = calculateBackoff(this.totalReconnectAttempts);
+    log.info('connection', `Scheduling reconnect in ${delayMs}ms (attempt ${this.totalReconnectAttempts + 1}/${MAX_RECONNECT_ATTEMPTS})`);
 
     this.clearReconnectTimer();
     this.reconnectTimer = setTimeout(async () => {
-      this.reconnectAttempts++;
+      this.totalReconnectAttempts++;
       try {
         await this.connect();
       } catch (error) {
@@ -385,9 +478,9 @@ export class ConnectionManager extends EventEmitter {
     return {
       state: this.state,
       lastConnected: this.lastHeartbeatTime || undefined,
-      lastAttempted: this.reconnectAttempts > 0 ? Date.now() : undefined,
+      lastAttempted: this.totalReconnectAttempts > 0 ? Date.now() : undefined,
       error: this.state === 'failed' ? 'Connection failed' : undefined,
-      reconnectAttempts: this.reconnectAttempts > 0 ? this.reconnectAttempts : undefined,
+      reconnectAttempts: this.totalReconnectAttempts > 0 ? this.totalReconnectAttempts : undefined,
     };
   }
 

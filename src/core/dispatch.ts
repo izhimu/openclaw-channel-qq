@@ -12,7 +12,7 @@ import type {
 import { getRuntime, getContext } from './runtime.js'
 import { getFile, sendMsg, setInputStatus } from './request.js'
 import { napCatToOpenClawMessage, openClawToNapCatMessage } from '../adapters/message.js';
-import { getFileName, getFileType, Logger as log, markdownToText } from '../utils/index.js';
+import { Logger as log, markdownToText, buildMediaMessage } from '../utils/index.js';
 import { CHANNEL_ID } from "./config.js";
 
 /**
@@ -32,7 +32,9 @@ async function contentToPlainText(content: OpenClawMessage[]): Promise<string> {
         case 'json':
           return `[JSON]\n\`\`\`json\n${c.data}\n\`\`\``;
         case 'reply':
-          let replyContent = `${c.sender}(${c.senderId}):\n${c.message}`;
+          const senderInfo = c.sender && c.senderId ? `${c.sender}(${c.senderId})` : '未知用户';
+          const replyMsg = c.message ?? '[无法获取原消息]';
+          let replyContent = `${senderInfo}:\n${replyMsg}`;
           replyContent = replyContent.split('\n').map(line => `> ${line}`).join('\n');
           return `[回复]\n${replyContent}\n`;
         default:
@@ -95,22 +97,7 @@ async function sendText(isGroup: boolean, chatId: string, text: string): Promise
 }
 
 async function sendMedia(isGroup: boolean, chatId: string, mediaUrl: string): Promise<void> {
-  let content: OpenClawMessage[] = [];
-  switch (getFileType(mediaUrl)) {
-    case "image":
-      content.push({ type: "image", url: mediaUrl.trim() })
-      break;
-    case "audio":
-      content.push({ type: "audio", path: mediaUrl.trim(), url: mediaUrl.trim(), file: getFileName(mediaUrl.trim()) })
-      break;
-    default:
-      content.push({ type: "file", url: mediaUrl.trim(), file: getFileName(mediaUrl.trim()) })
-  }
-
-  if (content.length === 0) {
-    log.warn('dispatch', `No media found in message`);
-    return;
-  }
+  const content: OpenClawMessage[] = [buildMediaMessage(mediaUrl)];
 
   try {
     await sendMsg({

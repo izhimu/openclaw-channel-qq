@@ -8,10 +8,17 @@ import type {
   SendMsgResp,
   SetInputStatusReq
 } from "../types";
+import pLimit from 'p-limit';
 import { Logger as log } from "../utils/index.js"
 import { setContextStatus, getContext, getConnection } from "./runtime.js"
 import { handleGroupMessage, handlePrivateMessage, handlePokeEvent } from "./dispatch.js";
 import { failResp } from "./connection.js"
+
+/**
+ * Rate limiter for sendMsg requests
+ * Limits concurrent messages to prevent API throttling
+ */
+const sendMsgLimiter = pLimit(1);
 
 /**
  * 事件监听
@@ -91,7 +98,7 @@ export async function eventListener(event: any): Promise<void> {
 }
 
 /**
- * 发送消息
+ * 发送消息（带限流）
  * @param params
  */
 export async function sendMsg(params: SendMsgReq): Promise<NapCatResp<SendMsgResp>> {
@@ -100,7 +107,9 @@ export async function sendMsg(params: SendMsgReq): Promise<NapCatResp<SendMsgRes
     log.warn("request", `No connection available`);
     return failResp();
   }
-  return connection.sendRequest("send_msg", params)
+
+  // 使用限流器控制并发，避免触发 NapCat API 限流
+  return sendMsgLimiter(() => connection.sendRequest("send_msg", params));
 }
 
 /**
