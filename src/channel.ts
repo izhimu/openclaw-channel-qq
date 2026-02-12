@@ -180,13 +180,11 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
         log.info('gateway', `State: ${status.state}`);
         if (status.state === "connected") {
           setContextStatus({
-            linked: true,
             connected: true,
             lastConnectedAt: Date.now(),
           });
         } else if (status.state === "disconnected" || status.state === "failed") {
           setContextStatus({
-            linked: false,
             connected: false,
             lastError: status.error,
           });
@@ -208,7 +206,6 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
       }
 
       setContextStatus({
-        linked: false,
         running: false,
         connected: false,
         lastStopAt: Date.now(),
@@ -220,12 +217,18 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
     checkReady: async () => {
       const status = await getStatus();
       if (status.status === "ok" && status.data?.online && status.data?.good) {
+        setContextStatus({
+          linked: true,
+        });
         return {
           ok: true,
           reason: 'ok'
         }
       } else {
         log.warn('heartbeat', `Heartbeat failed, status: ${status.status}, data: ${status.data}`);
+        setContextStatus({
+          linked: false,
+        });
         return {
           ok: false,
           reason: status.msg
