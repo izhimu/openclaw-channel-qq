@@ -1,6 +1,9 @@
 # @izhimu/qq
 
 <p align="center">
+  <a href="https://github.com/izhimu/openclaw-channel-qq/releases">
+    <img src="https://img.shields.io/github/v/release/izhimu/openclaw-channel-qq?display_name=tag" alt="Release">
+  </a>
   <a href="https://opensource.org/licenses/MIT">
     <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License: MIT">
   </a>
@@ -252,8 +255,8 @@ openclaw-channel-qq/
 | `image` | ✓ | ✓ | 图片 |
 | `face` | ✓ | - | QQ 表情 |
 | `reply` | ✓ | ✓ | 消息回复 |
-| `record` | ✓ | - | 语音消息 |
-| `file` | ✓ | - | 文件 |
+| `record` | ✓ | ✓ | 语音消息 |
+| `file` | ✓ | ✓ | 文件 |
 | `json` | ✓ | - | JSON 富文本 |
 
 ### OneBot 11 接口
