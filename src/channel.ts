@@ -132,7 +132,6 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
     probeAccount: async (): Promise<QQProbe> => {
       const status = await getStatus();
       setContextStatus({
-        running: true,
         lastProbeAt: Date.now(),
       });
       return {
@@ -168,11 +167,11 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
 
       log.info('gateway', `Starting gateway`);
 
-      // Update start time
-      setContextStatus({
-        running: true,
-        lastStartAt: Date.now(),
-      });
+      // 检查是否已存在连接
+      const existingConnection = getConnection();
+      if (existingConnection) {
+        await stopAccount();
+      }
 
       // Create new connection manager
       const connection = new ConnectionManager(account);
@@ -182,11 +181,13 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
         log.info('gateway', `State: ${status.state}`);
         if (status.state === "connected") {
           setContextStatus({
+            linked: true,
             connected: true,
             lastConnectedAt: Date.now(),
           });
         } else if (status.state === "disconnected" || status.state === "failed") {
           setContextStatus({
+            linked: false,
             connected: false,
             lastError: status.error,
           });
@@ -195,58 +196,55 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
       connection.on("reconnecting", (info: { reason: string; totalAttempts: number }) => {
         log.info('gateway', `Reconnecting: ${info.reason}, attempt ${info.totalAttempts}`);
         setContextStatus({
+          linked: false,
           connected: false,
           lastError: `Reconnecting (${info.reason})`,
           reconnectAttempts: info.totalAttempts,
         });
       });
 
-      await connection.start();
-
-      setConnection(connection);
-
-      log.info('gateway', `Started gateway`);
-    },
-    stopAccount: async (_ctx) => {
-      const connection = getConnection();
-
-      if (connection) {
-        await connection.stop();
-        clearConnection()
-      }
-
-      setContextStatus({
-        running: false,
-        connected: false,
-        lastStopAt: Date.now(),
-      });
-      clearContext()
-    },
-  },
-  heartbeat: {
-    checkReady: async () => {
-      const status = await getStatus();
-      if (status.status === "ok" && status.data?.online && status.data?.good) {
+      try {
+        await connection.start();
+        setConnection(connection);
+        // Update start time
         setContextStatus({
+          running: true,
           linked: true,
+          connected: true,
+          lastStartAt: Date.now(),
         });
-        return {
-          ok: true,
-          reason: 'ok'
-        }
-      } else {
-        log.warn('heartbeat', `Heartbeat failed, status: ${status.status}, data: ${status.data}`);
+        log.info('gateway', `Started gateway`);
+      } catch (error) {
+        log.error('gateway', `Failed to start gateway:`, error);
         setContextStatus({
+          running: false,
           linked: false,
+          connected: false,
+          lastError: error instanceof Error ? error.message : 'Failed to start gateway',
         });
-        return {
-          ok: false,
-          reason: status.msg
-        }
+        throw error;
       }
-    }
+    },
+    stopAccount,
   }
 };
+
+async function stopAccount(){
+  const connection = getConnection();
+
+  if (connection) {
+    await connection.stop();
+    clearConnection()
+  }
+
+  setContextStatus({
+    running: false,
+    linked: false,
+    connected: false,
+    lastStopAt: Date.now(),
+  });
+  clearContext()
+}
 
 async function outboundSend(ctx: ChannelOutboundContext): Promise<OutboundDeliveryResult> {
   const { to, text, mediaUrl, accountId, replyToId } = ctx;

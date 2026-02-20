@@ -25,8 +25,8 @@ import {
 
 const MAX_RECONNECT_ATTEMPTS = -1;
 const REQUEST_TIMEOUT = 30000; // 30 seconds
-const HEARTBEAT_TIMEOUT = 60000; // 60 seconds - time without heartbeat before reconnecting
-const HEARTBEAT_CHECK_INTERVAL = 30000; // 30 seconds - how often to check for heartbeat timeout
+const HEARTBEAT_TIMEOUT = 120000; // 120 seconds - time without heartbeat before reconnecting (increased for NapCat compatibility)
+const HEARTBEAT_CHECK_INTERVAL = 60000; // 60 seconds - how often to check for heartbeat timeout
 
 /**
  * Connection Manager for a single NapCat account
@@ -95,6 +95,12 @@ export class ConnectionManager extends EventEmitter {
   private async connect(): Promise<void> {
     if (this.ws?.readyState === WebSocket.OPEN) {
       return;
+    }
+
+    // 防御性清理：确保旧连接和监听器被清理，避免潜在的内存泄漏
+    if (this.ws) {
+      this.ws.removeAllListeners();
+      this.ws = null;
     }
 
     this.setState('connecting');
@@ -195,6 +201,7 @@ export class ConnectionManager extends EventEmitter {
         this.emit('heartbeat', this.healthStatus);
 
         // Close connection and trigger immediate reconnect
+        this.setState('disconnected');
         this.close('Heartbeat timeout').then(() => {
           if (this.shouldReconnect) {
             // Increment total reconnect attempts
@@ -320,6 +327,14 @@ export class ConnectionManager extends EventEmitter {
   private handleClose(code: number, reason: Buffer): void {
     const reasonStr = reason.toString() || getCloseCodeMessage(code);
     log.warn('connection', `Connection closed: ${code} - ${reasonStr}`);
+
+    // 停止心跳检测
+    this.stopHeartbeatCheck();
+
+    // 如果 ws 已经为 null，说明是主动关闭（如心跳超时），不需要再处理
+    if (this.ws === null) {
+      return;
+    }
 
     if (this.shouldReconnect && !this.isNormalClosure(code)) {
       this.scheduleReconnect();

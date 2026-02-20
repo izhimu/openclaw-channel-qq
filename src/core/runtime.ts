@@ -4,7 +4,7 @@
  */
 
 import type { ChannelAccountSnapshot, ChannelGatewayContext, PluginRuntime } from "openclaw/plugin-sdk";
-import type { QQConfig } from "../types/index.js";
+import type { QQConfig } from "../types";
 import { ConnectionManager } from "./connection.js";
 
 // =============================================================================
