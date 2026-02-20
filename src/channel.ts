@@ -170,7 +170,8 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
       // 检查是否已存在连接
       const existingConnection = getConnection();
       if (existingConnection) {
-        await stopAccount();
+        log.warn('gateway', `A connection is already running`);
+        return;
       }
 
       // Create new connection manager
@@ -225,26 +226,24 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
         throw error;
       }
     },
-    stopAccount,
+    stopAccount: async (_ctx) => {
+      const connection = getConnection();
+
+      if (connection) {
+        await connection.stop();
+        clearConnection()
+      }
+
+      setContextStatus({
+        running: false,
+        linked: false,
+        connected: false,
+        lastStopAt: Date.now(),
+      });
+      clearContext()
+    },
   }
 };
-
-async function stopAccount(){
-  const connection = getConnection();
-
-  if (connection) {
-    await connection.stop();
-    clearConnection()
-  }
-
-  setContextStatus({
-    running: false,
-    linked: false,
-    connected: false,
-    lastStopAt: Date.now(),
-  });
-  clearContext()
-}
 
 async function outboundSend(ctx: ChannelOutboundContext): Promise<OutboundDeliveryResult> {
   const { to, text, mediaUrl, accountId, replyToId } = ctx;
