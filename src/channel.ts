@@ -41,7 +41,7 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
     id: CHANNEL_ID,
     label: "QQ",
     selectionLabel: "QQ",
-    docsPath: "/channels/qq",
+    docsPath: "extensions/qq",
     blurb: "通过 NapCat WebSocket 连接 QQ 机器人",
     quickstartAllowFrom: true,
   },
@@ -131,11 +131,14 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
     }),
     probeAccount: async (): Promise<QQProbe> => {
       const status = await getStatus();
+      const ok = status.status === "ok";
       setContextStatus({
+        linked: ok,
+        running: ok,
         lastProbeAt: Date.now(),
       });
       return {
-        ok: status.status === "ok",
+        ok: ok,
         status: status.retcode,
         error: status.status === "failed" ? status.msg : null,
       }
