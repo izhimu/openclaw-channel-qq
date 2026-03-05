@@ -9,9 +9,9 @@ import type {
   NapCatJsonSegment,
   OpenClawMessage,
   OpenClawJsonContent,
-} from '../types/index.js';
+} from '../types';
 import { Logger as log, extractImageUrl, getEmojiForFaceId } from '../utils/index.js';
-import { CQCodeUtils, type CQNode } from '../utils/cqcode.js';
+import { CQCodeUtils, type CQNode } from '../utils';
 import { getMsg } from "../core/request.js";
 
 // =============================================================================

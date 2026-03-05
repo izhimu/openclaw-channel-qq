@@ -59,9 +59,8 @@ export class MarkdownToText {
     text = text.replace(/<\/?([a-z][a-z0-9]*)\b[^>]*>/gi, '');
 
     // 3.3 标题 (Headers) -> 视觉醒目文本
-    text = text.replace(/^#\s+(.*)$/gm, '\n$1\n══════════\n');
-    text = text.replace(/^##\s+(.*)$/gm, '\n$1\n──────────\n');
-    text = text.replace(/^(#{3,6})\s+(.*)$/gm, '\n【 $2 】\n');
+    text = text.replace(/^#\s+(.*)$/gm, '\n$1\n\n\n');
+    text = text.replace(/^(#{2,6})\s+(.*)$/gm, '\n$1\n\n');
 
     // 3.4 Markdown 分割线 (---, ***)
     text = text.replace(/^(-\s*?|\*\s*?|_\s*?){3,}\s*$/gm, '──────────');
@@ -119,7 +118,7 @@ export class MarkdownToText {
     return text.replace(codeBlockRegex, (_match, _fence, lang, code) => {
       const key = `${this.maskPrefix}BLOCK-${this.maskCounter++}`;
       const langTag = lang ? ` [${lang}]` : '';
-      const formatted = `\n───code───${langTag}\n${code.replace(/^\n+|\n+$/g, '')}\n──────────\n`;
+      const formatted = `\n──────────${langTag}\n${code.replace(/^\n+|\n+$/g, '')}\n──────────\n`;
       this.codeBlockStore.set(key, formatted);
       return key;
     });

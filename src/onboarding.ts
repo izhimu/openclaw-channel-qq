@@ -5,7 +5,7 @@
  */
 import type { ChannelOnboardingAdapter } from "openclaw/plugin-sdk"
 import { CHANNEL_ID, resolveQQAccount } from "./core/config.js";
-import type { QQConfig } from "./types/index.js"
+import type { QQConfig } from "./types"
 
 /**
  * QQ NapCat Onboarding Adapter
