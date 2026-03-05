@@ -60,7 +60,7 @@ export class MarkdownToText {
 
     // 3.3 标题 (Headers) -> 视觉醒目文本
     text = text.replace(/^#\s+(.*)$/gm, '\n$1\n\n\n');
-    text = text.replace(/^(#{2,6})\s+(.*)$/gm, '\n$1\n\n');
+    text = text.replace(/^(#{2,6})\s+(.*)$/gm, '\n$2\n\n');
 
     // 3.4 Markdown 分割线 (---, ***)
     text = text.replace(/^(-\s*?|\*\s*?|_\s*?){3,}\s*$/gm, '──────────');
