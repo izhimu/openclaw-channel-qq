@@ -10,7 +10,14 @@ import {
   deleteAccountFromConfigSection,
   DEFAULT_ACCOUNT_ID
 } from "openclaw/plugin-sdk";
-import type { QQConfig, ConnectionStatus, OutboundDeliveryResult, OpenClawMessage, QQProbe } from "./types";
+import type {
+  QQConfig,
+  ConnectionStatus,
+  OutboundDeliveryResult,
+  OpenClawMessage,
+  QQProbe,
+  GetFriendListResp, GetGroupListResp
+} from "./types";
 import {
   messageIdToString,
   markdownToText,
@@ -32,7 +39,7 @@ import {
   resolveQQAccount,
   QQConfigSchema, CHANNEL_ID
 } from "./core/config.js";
-import { eventListener, sendMsg, getStatus } from "./core/request.js"
+import { eventListener, sendMsg, getStatus, getLoginInfo, getFriendList, getGroupList } from "./core/request.js"
 import { qqOnboardingAdapter } from "./onboarding.js";
 
 export const qqPlugin: ChannelPlugin<QQConfig> = {
@@ -244,6 +251,35 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
         lastStopAt: Date.now(),
       });
       clearContext()
+    },
+  },
+  directory: {
+    self: async () => {
+      const info = await getLoginInfo();
+      if (!info.data){
+        return null
+      }
+      return {
+        kind: "user",
+        id: info.data.user_id.toString(),
+        name: info.data.nickname,
+      };
+    },
+    listPeers: async () => {
+      const friendList = await getFriendList();
+      return (friendList.data || []).map((friend: GetFriendListResp) => ({
+        kind: "user",
+        id: friend.user_id.toString(),
+        name: friend.nickname,
+      }));
+    },
+    listGroups: async () => {
+      const groupList = await getGroupList();
+      return (groupList.data || []).map((group: GetGroupListResp) => ({
+        kind: "group",
+        id: group.group_id.toString(),
+        name: group.group_name,
+      }));
     },
   }
 };

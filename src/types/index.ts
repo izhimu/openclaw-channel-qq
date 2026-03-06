@@ -30,6 +30,9 @@ export type NapCatAction =
   | 'get_msg'
   | 'get_status'
   | 'get_file'
+  | 'get_login_info'
+  | 'get_friend_list'
+  | 'get_group_list'
   | 'set_input_status';
 
 // =============================================================================
@@ -365,6 +368,25 @@ export interface GetStatusResp {
   good: boolean;
   stat: Record<any, any>;
 }
+
+export interface GetLoginInfoResp {
+  user_id: number;
+  nickname: string;
+}
+
+export interface GetFriendListResp {
+  user_id: number;
+  nickname: string;
+}
+
+export interface GetGroupListResp {
+  group_id: number;
+  group_name: string;
+}
+
+// =============================================================================
+// Other Types
+// =============================================================================
 
 export interface DispatchMessageMedia {
   type?: string;
