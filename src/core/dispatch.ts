@@ -3,7 +3,7 @@
  * Handles routing and dispatching incoming messages to the AI
  */
 
-import type { ReplyPayload } from "openclaw/plugin-sdk";
+import { ReplyPayload, resolveInboundRouteEnvelopeBuilderWithRuntime } from "openclaw/plugin-sdk";
 import type {
   DispatchMessageMedia,
   DispatchMessageParams,
@@ -130,32 +130,29 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
   }
 
   const isGroup = chatType === 'group';
-  const peerId = isGroup ? `group:${chatId}` : senderId;
+  const peerId = isGroup ? `qq:group:${chatId}` : `qq:${senderId}`;
 
-  const route = runtime.channel.routing.resolveAgentRoute({
+  const { route, buildEnvelope } = resolveInboundRouteEnvelopeBuilderWithRuntime({
     cfg: context.cfg,
     channel: CHANNEL_ID,
+    accountId: context.accountId,
     peer: {
-      kind: 'group',
+      kind: isGroup ? 'group' : 'direct',
       id: peerId,
     },
+    // @ts-ignore
+    runtime: runtime.channel,
+    sessionStore: context.cfg.session?.store
   });
-  log.debug('dispatch', `Resolved route: ${JSON.stringify(route)}`)
-  const envelopeOptions = runtime.channel.reply.resolveEnvelopeFormatOptions(context.cfg);
-  const body = runtime.channel.reply.formatInboundEnvelope({
+
+  const { storePath, body } = buildEnvelope({
     channel: CHANNEL_ID,
     from: senderName || senderId,
     body: content,
     timestamp,
-    chatType: isGroup ? 'group' : 'direct',
-    sender: {
-      id: senderId,
-      name: senderName,
-    },
-    envelope: envelopeOptions,
   });
   log.debug('dispatch', `Inbound envelope: ${body}`)
-  const fromAddress = isGroup ? `qq:group:${chatId}` : `qq:${senderId}`;
+  const fromAddress = peerId;
   const toAddress = `qq:${chatId}`;
   const ctxPayload = runtime.channel.reply.finalizeInboundContext({
     Body: body,
@@ -180,6 +177,15 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
   });
 
   log.info('dispatch', `Dispatching to agent ${route.agentId}, session: ${route.sessionKey}`);
+
+  await runtime.channel.session.recordInboundSession({
+    storePath,
+    sessionKey: route.sessionKey,
+    ctx: ctxPayload,
+    onRecordError(err): void {
+      log.error('dispatch', `Failed to record inbound session: ${err}`);
+    },
+  });
 
   const messagesConfig = runtime.channel.reply.resolveEffectiveMessagesConfig(context.cfg, route.agentId);
 
@@ -207,7 +213,7 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
           if (payload.text && !payload.text.startsWith('MEDIA:')) {
             await sendText(isGroup, chatId, payload.text);
           }
-          if (payload.text && payload.text.startsWith('MEDIA:')){
+          if (payload.text && payload.text.startsWith('MEDIA:')) {
             await sendMedia(isGroup, chatId, payload.text.replace('MEDIA:', ''));
           }
           if (payload.mediaUrl) {
