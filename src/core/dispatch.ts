@@ -130,29 +130,28 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
   }
 
   const isGroup = chatType === 'group';
-  const peerId = isGroup ? `qq:group:${chatId}` : `qq:${senderId}`;
 
   const { route, buildEnvelope } = resolveInboundRouteEnvelopeBuilderWithRuntime({
     cfg: context.cfg,
     channel: CHANNEL_ID,
     accountId: context.accountId,
     peer: {
-      kind: isGroup ? 'group' : 'direct',
-      id: peerId,
+      kind: isGroup ? ("group" as const) : ("direct" as const),
+      id: chatId,
     },
-    // @ts-ignore
     runtime: runtime.channel,
     sessionStore: context.cfg.session?.store
   });
 
+  const fromLabel = isGroup ? `group:${chatId}` : senderName || `user:${senderId}`;
   const { storePath, body } = buildEnvelope({
     channel: CHANNEL_ID,
-    from: senderName || senderId,
+    from: fromLabel,
     body: content,
     timestamp,
   });
   log.debug('dispatch', `Inbound envelope: ${body}`)
-  const fromAddress = peerId;
+  const fromAddress = `qq:${fromLabel}`;
   const toAddress = `qq:${chatId}`;
   const ctxPayload = runtime.channel.reply.finalizeInboundContext({
     Body: body,
@@ -163,6 +162,7 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
     SessionKey: route.sessionKey,
     AccountId: route.accountId,
     ChatType: isGroup ? 'group' : 'direct',
+    ConversationLabel: fromLabel,
     SenderId: senderId,
     SenderName: senderName,
     Provider: CHANNEL_ID,
