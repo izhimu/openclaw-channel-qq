@@ -127,6 +127,13 @@ async function napCatToOpenClaw(segment: NapCatMessage): Promise<OpenClawMessage
         sender: response.data.sender.nickname
       };
 
+    case 'video':
+      return {
+        type: 'video',
+        url: String(data.url || ''),
+        fileSize: data.file_size ? parseInt(String(data.file_size), 10) : undefined,
+      };
+
     case 'face':
       return { type: 'text', text: getEmojiForFaceId(String(data.id || '')) };
 

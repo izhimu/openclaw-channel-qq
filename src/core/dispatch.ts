@@ -35,26 +35,39 @@ import { CHANNEL_ID } from "./config.js";
  * For replies, includes quoted message content if available
  */
 async function contentToPlainText(content: OpenClawMessage[]): Promise<string> {
-  return content
-    .filter(c => c.type !== 'image' && c.type !== 'audio' && c.type !== 'file')
-    .map((c) => {
+  const results = await Promise.all(
+    content.map(async (c) => {
       switch (c.type) {
         case 'text':
-          return `${c.text}`;
+          return c.text;
         case 'at':
-          return c.isAll ? '@全体成员' : `@${c.userId}`;
+          const target = c.isAll ? '@全体成员' : `@${c.userId}`;
+          return `[AT]${target}`;
+        case 'image':
+          return `[图片]${c.url}`;
+        case 'audio':
+          return `[音频]${c.path}`;
+        case 'video':
+          return `[视频]${c.url}`;
+        case 'file': {
+          const fileInfo = await getFile({ file_id: c.fileId });
+          if (!fileInfo.data?.file) return null;
+          return `[文件]${fileInfo.data.file}`;
+        }
         case 'json':
-          return `[JSON]\n\`\`\`json\n${c.data}\n\`\`\``;
-        case 'reply':
-          const senderInfo = c.sender && c.senderId ? `${c.sender}(${c.senderId})` : '未知用户';
-          const replyMsg = c.message ?? '[无法获取原消息]';
-          let replyContent = `${senderInfo}:\n${replyMsg}`;
-          replyContent = replyContent.split('\n').map(line => `> ${line}`).join('\n');
-          return `[回复]\n${replyContent}\n`;
+          return `[JSON]\n\n\`\`\`json\n${c.data}\n\`\`\``;
+        case 'reply': {
+          const senderInfo = c.sender && c.senderId ? `${c.sender}(${c.senderId})` : '(未知用户)';
+          const replyMsg = c.message ?? '(无法获取原消息)';
+          const quotedContent = `${senderInfo}:\n${replyMsg}`.replace(/^/gm, '> ');
+          return `[回复]\n\n${quotedContent}`;
+        }
         default:
-          return '';
+          return null;
       }
-    }).join('\n');
+    })
+  );
+  return results.filter((v): v is string => v !== null).join('\n');
 }
 
 async function contextToMedia(content: OpenClawMessage[]): Promise<DispatchMessageMedia | undefined> {
@@ -149,8 +162,8 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
   // At 模式处理
   if (isGroup && config.groupAtMode) {
     const loginInfo = getLoginInfo();
-    const hasAtAll = content.includes('@全体成员');
-    const hasAtMe = loginInfo.userId && content.includes(`@${loginInfo.userId}`);
+    const hasAtAll = content.includes('[AT]@全体成员');
+    const hasAtMe = loginInfo.userId && content.includes(`[AT]@${loginInfo.userId}`);
     const hasPoke = content.includes('[动作]') && targetId === loginInfo.userId;
 
     if (!hasAtAll && !hasAtMe && !hasPoke) {
@@ -419,7 +432,7 @@ export async function handlePokeEvent(
     senderId: String(event.user_id),
     senderName: String(event.user_id),
     messageId: `poke_${event.user_id}_${Date.now()}`,
-    content: `[动作]\n${pokeMessage}`,
+    content: `[动作]${pokeMessage}`,
     timestamp: Date.now(),
     targetId: String(event.target_id),
   });

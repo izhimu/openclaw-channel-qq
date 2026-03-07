@@ -74,7 +74,8 @@ export type NapCatMessage =
   | NapCatRecordSegment
   | NapCatFileSegment
   | NapCatJsonSegment
-  | NapCatUnknownSegment;
+  | NapCatUnknownSegment
+  | NapCatVideoSegment;
 
 export interface NapCatTextSegment {
   type: 'text';
@@ -142,6 +143,14 @@ export interface NapCatJsonSegment {
   };
 }
 
+export interface NapCatVideoSegment {
+  type: 'video';
+  data: {
+    url: string;
+    file_size?: string;
+  };
+}
+
 export interface NapCatUnknownSegment {
   type: string;
   data: Record<string, unknown>;
@@ -169,6 +178,16 @@ export interface ConnectionStatus {
 // OpenClaw Message Types (for integration)
 // =============================================================================
 
+export type OpenClawMessage =
+  | OpenClawTextContent
+  | OpenClawAtContent
+  | OpenClawImageContent
+  | OpenClawReplyContent
+  | OpenClawAudioContent
+  | OpenClawJsonContent
+  | OpenClawFileContent
+  | OpenClawVideoContent;
+
 export interface OpenClawTextContent {
   type: 'text';
   text: string;
@@ -183,7 +202,6 @@ export interface OpenClawAtContent {
 export interface OpenClawImageContent {
   type: 'image';
   url: string;
-  /** Optional summary/description (e.g., "[动画表情]" for animated stickers) */
   summary?: string;
 }
 
@@ -197,21 +215,15 @@ export interface OpenClawReplyContent {
 
 export interface OpenClawAudioContent {
   type: 'audio';
-  /** Local file path to the audio file */
   path: string;
-  /** Optional URL for downloading the audio */
   url?: string;
-  /** File name */
   file: string;
-  /** File size in bytes */
   fileSize?: number;
 }
 
 export interface OpenClawJsonContent {
   type: 'json';
-  /** Raw JSON data string */
   data: string;
-  /** Optional display text/prompt from the JSON */
   prompt?: string;
 }
 
@@ -223,14 +235,11 @@ export interface OpenClawFileContent {
   fileSize?: number;
 }
 
-export type OpenClawMessage =
-  | OpenClawTextContent
-  | OpenClawAtContent
-  | OpenClawImageContent
-  | OpenClawReplyContent
-  | OpenClawAudioContent
-  | OpenClawJsonContent
-  | OpenClawFileContent;
+export interface OpenClawVideoContent {
+  type: 'video';
+  url?: string;
+  fileSize?: number;
+}
 
 // =============================================================================
 // API Response Types
