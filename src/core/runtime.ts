@@ -4,7 +4,7 @@
  */
 
 import type { ChannelAccountSnapshot, ChannelGatewayContext, PluginRuntime } from "openclaw/plugin-sdk";
-import type { QQConfig } from "../types";
+import { QQConfig, QQSession } from "../types";
 import { ConnectionManager } from "./connection.js";
 
 // =============================================================================
@@ -64,4 +64,29 @@ export function getConnection(): ConnectionManager | null {
 
 export function clearConnection(): void {
   connection = null;
+}
+
+// =============================================================================
+// Session
+// =============================================================================
+
+const sessionMap = new Map<string, QQSession>()
+
+export function getSession(sessionKey: string): QQSession {
+  let session = sessionMap.get(sessionKey);
+  if (session) {
+    return session;
+  }
+
+  session = {};
+  sessionMap.set(sessionKey, session);
+  return session;
+}
+
+export function updateSession(sessionKey: string, session: QQSession): void {
+  sessionMap.set(sessionKey, session);
+}
+
+export function clearSession(sessionKey: string): void {
+  sessionMap.delete(sessionKey);
 }

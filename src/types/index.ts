@@ -410,3 +410,8 @@ export type QQProbe = {
   status?: number | null;
   error?: string | null;
 };
+
+export type QQSession = {
+  abortController?: AbortController;
+  aborted?: boolean;
+}

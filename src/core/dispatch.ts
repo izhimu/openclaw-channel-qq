@@ -9,7 +9,7 @@ import type {
   DispatchMessageParams,
   OpenClawMessage,
 } from '../types';
-import { getRuntime, getContext } from './runtime.js'
+import { getRuntime, getContext, getSession, clearSession, updateSession } from './runtime.js'
 import { getFile, sendMsg, setInputStatus } from './request.js'
 import { napCatToOpenClawMessage, openClawToNapCatMessage } from '../adapters/message.js';
 import { Logger as log, markdownToText, buildMediaMessage } from '../utils/index.js';
@@ -143,6 +143,14 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
     sessionStore: context.cfg.session?.store
   });
 
+  // 终止信号
+  const session = getSession(route.sessionKey);
+  if (session.abortController) {
+    session.abortController.abort();
+    session.aborted = true;
+    log.info('dispatch', `Aborted previous session`)
+  }
+
   const fromLabel = isGroup ? `group:${chatId}` : senderName || `user:${senderId}`;
   const { storePath, body } = buildEnvelope({
     channel: CHANNEL_ID,
@@ -190,6 +198,8 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
   const messagesConfig = runtime.channel.reply.resolveEffectiveMessagesConfig(context.cfg, route.agentId);
 
   try {
+    session.abortController = new AbortController()
+    updateSession(route.sessionKey, session)
     await runtime.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
       ctx: ctxPayload,
       cfg: context.cfg,
@@ -208,6 +218,11 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
           }
         },
         deliver: async (payload: ReplyPayload, info: { kind: string }): Promise<void> => {
+          if (session.aborted) {
+            session.aborted = false;
+            log.info('dispatch', `aborted skipping`)
+            return;
+          }
           log.info('dispatch', `deliver(${info.kind}): ${JSON.stringify(payload)}`);
 
           if (payload.text && !payload.text.startsWith('MEDIA:')) {
@@ -230,7 +245,9 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
           await sendText(isGroup, chatId, `[错误]\n${String(err)}`);
         },
       },
-      replyOptions: {},
+      replyOptions: {
+        abortSignal: session.abortController?.signal,
+      },
     });
 
     log.info('dispatch', `Dispatch completed`);
@@ -244,6 +261,7 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
         event_type: 2
       });
     }
+    clearSession(route.sessionKey);
   }
 }
 
