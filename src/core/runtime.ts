@@ -3,8 +3,8 @@
  * Stores the PluginRuntime for access in gateway handlers
  */
 
-import type { ChannelAccountSnapshot, ChannelGatewayContext, PluginRuntime } from "openclaw/plugin-sdk";
-import { QQConfig, QQSession } from "../types";
+import type { ChannelAccountSnapshot, ChannelGatewayContext, HistoryEntry, PluginRuntime } from "openclaw/plugin-sdk";
+import { QQConfig, QQLoginInfo, QQSession } from "../types";
 import { ConnectionManager } from "./connection.js";
 
 // =============================================================================
@@ -90,3 +90,26 @@ export function updateSession(sessionKey: string, session: QQSession): void {
 export function clearSession(sessionKey: string): void {
   sessionMap.delete(sessionKey);
 }
+
+// =============================================================================
+// LoginInfo
+// =============================================================================
+
+const loginInfo: QQLoginInfo = {
+  userId: '',
+  nickname: '',
+}
+
+export function setLoginInfo(next: QQLoginInfo): void {
+  Object.assign(loginInfo, next);
+}
+
+export function getLoginInfo(): QQLoginInfo {
+  return loginInfo;
+}
+
+// =============================================================================
+// History
+// =============================================================================
+
+export const historyCache = new Map<string, HistoryEntry[]>()

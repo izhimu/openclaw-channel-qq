@@ -148,16 +148,6 @@ export interface NapCatUnknownSegment {
 }
 
 // =============================================================================
-// Plugin Config Types
-// =============================================================================
-
-export interface QQConfig {
-  wsUrl: string;
-  accessToken?: string;
-  enabled: boolean;
-}
-
-// =============================================================================
 // Connection State Types
 // =============================================================================
 
@@ -403,15 +393,29 @@ export interface DispatchMessageParams {
   content: string;
   media?: DispatchMessageMedia;
   timestamp: number;
+  targetId?: string;
+}
+
+export interface QQConfig {
+  wsUrl: string;
+  accessToken?: string;
+  enabled: boolean;
+  groupAtMode: boolean;
+  groupHistoryLimit: number;
 }
 
 export type QQProbe = {
   ok: boolean;
   status?: number | null;
   error?: string | null;
-};
+}
 
 export type QQSession = {
   abortController?: AbortController;
   aborted?: boolean;
+}
+
+export type QQLoginInfo = {
+  userId: string;
+  nickname: string;
 }

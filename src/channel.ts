@@ -3,12 +3,12 @@
  * Main plugin entry point
  */
 
-import type { ChannelPlugin, ChannelOutboundContext } from "openclaw/plugin-sdk";
+import type { ChannelPlugin, ChannelOutboundContext, ChannelDirectoryEntry } from "openclaw/plugin-sdk";
 import {
+  DEFAULT_ACCOUNT_ID,
   buildChannelConfigSchema,
   setAccountEnabledInConfigSection,
-  deleteAccountFromConfigSection,
-  DEFAULT_ACCOUNT_ID
+  deleteAccountFromConfigSection
 } from "openclaw/plugin-sdk";
 import type {
   QQConfig,
@@ -30,7 +30,8 @@ import {
   clearContext,
   setConnection,
   getConnection,
-  clearConnection
+  clearConnection,
+  setLoginInfo
 } from "./core/runtime.js";
 import { ConnectionManager } from "./core/connection.js";
 import { openClawToNapCatMessage } from "./adapters/message.js";
@@ -217,6 +218,14 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
       try {
         await connection.start();
         setConnection(connection);
+        // 获取登录信息
+        const info = await getLoginInfo();
+        if (info.data) {
+          setLoginInfo({
+            userId: info.data.user_id.toString(),
+            nickname: info.data.nickname,
+          })
+        }
         // Update start time
         setContextStatus({
           running: true,
@@ -256,31 +265,20 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
   directory: {
     self: async () => {
       const info = await getLoginInfo();
-      if (!info.data){
+      if (!info.data) {
         return null
       }
+      log.debug('directory', `self: ${JSON.stringify(info.data)}`);
       return {
         kind: "user",
         id: info.data.user_id.toString(),
         name: info.data.nickname,
       };
     },
-    listPeers: async () => {
-      const friendList = await getFriendList();
-      return (friendList.data || []).map((friend: GetFriendListResp) => ({
-        kind: "user",
-        id: friend.user_id.toString(),
-        name: friend.nickname,
-      }));
-    },
-    listGroups: async () => {
-      const groupList = await getGroupList();
-      return (groupList.data || []).map((group: GetGroupListResp) => ({
-        kind: "group",
-        id: group.group_id.toString(),
-        name: group.group_name,
-      }));
-    },
+    listPeers: getFriends,
+    listPeersLive: getFriends,
+    listGroups: getGroups,
+    listGroupsLive: getGroups,
   }
 };
 
@@ -342,4 +340,24 @@ async function outboundSend(ctx: ChannelOutboundContext): Promise<OutboundDelive
       deliveredAt: Date.now(),
     };
   }
+}
+
+async function getFriends(): Promise<ChannelDirectoryEntry[]> {
+  const friendList = await getFriendList();
+  log.debug('directory', `friendList: ${JSON.stringify(friendList.data)}`);
+  return (friendList.data || []).map((friend: GetFriendListResp) => ({
+    kind: "user",
+    id: friend.user_id.toString(),
+    name: friend.nickname,
+  }));
+}
+
+async function getGroups(): Promise<ChannelDirectoryEntry[]> {
+  const groupList = await getGroupList();
+  log.debug('directory', `groupList: ${JSON.stringify(groupList.data)}`);
+  return (groupList.data || []).map((group: GetGroupListResp) => ({
+    kind: "group",
+    id: group.group_id.toString(),
+    name: group.group_name,
+  }));
 }

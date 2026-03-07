@@ -34,6 +34,8 @@ export function resolveQQAccount(params: {
     enabled: config?.enabled !== false,
     wsUrl: config?.wsUrl ?? "",
     accessToken: config?.accessToken,
+    groupAtMode: config?.groupAtMode ?? true,
+    groupHistoryLimit: config?.groupHistoryLimit ?? 20,
   };
 }
 
@@ -44,10 +46,13 @@ const wsUrlRegex = /^wss?:\/\/[\w.-]+(:\d+)?(\/[\w./-]*)?$/;
 
 const wsUrlSchema = z.string()
   .regex(wsUrlRegex, { message: "Invalid WebSocket URL format. Expected: ws://host:port or wss://host:port" })
-  .default("ws://127.0.0.1:3001");
+  .default("ws://127.0.0.1:3001")
+  .describe("NapCat Websocket 连接地址");
 
 export const QQConfigSchema = z.object({
   wsUrl: wsUrlSchema,
-  accessToken: z.string().default("access-token"),
-  enable: z.boolean().default(true)
+  accessToken: z.string().default("access-token").describe("NapCat Websocket Token"),
+  enable: z.boolean().default(true).describe("是否启用"),
+  groupAtMode: z.boolean().default(true).describe("群组响应模式：默认启用，只有在被@时才会响应"),
+  groupHistoryLimit: z.number().default(20).describe("群组历史记录信息条数限制"),
 });

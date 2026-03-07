@@ -3,13 +3,27 @@
  * Handles routing and dispatching incoming messages to the AI
  */
 
-import { ReplyPayload, resolveInboundRouteEnvelopeBuilderWithRuntime } from "openclaw/plugin-sdk";
+import {
+  type ReplyPayload,
+  buildPendingHistoryContextFromMap,
+  clearHistoryEntries,
+  recordPendingHistoryEntry,
+  resolveInboundRouteEnvelopeBuilderWithRuntime
+} from "openclaw/plugin-sdk";
 import type {
   DispatchMessageMedia,
   DispatchMessageParams,
   OpenClawMessage,
 } from '../types';
-import { getRuntime, getContext, getSession, clearSession, updateSession } from './runtime.js'
+import {
+  getRuntime,
+  getContext,
+  getSession,
+  clearSession,
+  updateSession,
+  getLoginInfo,
+  historyCache
+} from './runtime.js'
 import { getFile, sendMsg, setInputStatus } from './request.js'
 import { napCatToOpenClawMessage, openClawToNapCatMessage } from '../adapters/message.js';
 import { Logger as log, markdownToText, buildMediaMessage } from '../utils/index.js';
@@ -116,7 +130,7 @@ async function sendMedia(isGroup: boolean, chatId: string, mediaUrl: string): Pr
  * Dispatch an incoming message to the AI for processing
  */
 export async function dispatchMessage(params: DispatchMessageParams): Promise<void> {
-  const { chatType, chatId, senderId, senderName, messageId, content, media, timestamp } = params;
+  let { chatType, chatId, senderId, senderName, messageId, content, media, timestamp, targetId } = params;
 
   const runtime = getRuntime();
   if (!runtime) {
@@ -130,6 +144,31 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
   }
 
   const isGroup = chatType === 'group';
+  const config = context.account;
+
+  // At 模式处理
+  if (isGroup && config.groupAtMode) {
+    const loginInfo = getLoginInfo();
+    const hasAtAll = content.includes('@全体成员');
+    const hasAtMe = loginInfo.userId && content.includes(`@${loginInfo.userId}`);
+    const hasPoke = content.includes('[动作]') && targetId === loginInfo.userId;
+
+    if (!hasAtAll && !hasAtMe && !hasPoke) {
+      log.debug('dispatch', `Skipping group message (not mentioned)`);
+      recordPendingHistoryEntry({
+        historyMap: historyCache,
+        historyKey: chatId,
+        limit: config.groupHistoryLimit,
+        entry: {
+          sender: `${senderName}(${senderId})`,
+          body: content,
+          timestamp: timestamp,
+          messageId: messageId,
+        },
+      })
+      return;
+    }
+  }
 
   const { route, buildEnvelope } = resolveInboundRouteEnvelopeBuilderWithRuntime({
     cfg: context.cfg,
@@ -149,6 +188,16 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
     session.abortController.abort();
     session.aborted = true;
     log.info('dispatch', `Aborted previous session`)
+  }
+
+  if (isGroup) {
+    content = buildPendingHistoryContextFromMap({
+      historyMap: historyCache,
+      historyKey: chatId,
+      limit: config.groupHistoryLimit,
+      currentMessage: content,
+      formatEntry: (e) => `${e.sender}: ${e.body}`,
+    })
   }
 
   const fromLabel = isGroup ? `group:${chatId}` : senderName || `user:${senderId}`;
@@ -196,7 +245,6 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
   });
 
   const messagesConfig = runtime.channel.reply.resolveEffectiveMessagesConfig(context.cfg, route.agentId);
-
   try {
     session.abortController = new AbortController()
     updateSession(route.sessionKey, session)
@@ -222,6 +270,10 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
             session.aborted = false;
             log.info('dispatch', `aborted skipping`)
             return;
+          }
+
+          if (isGroup) {
+            clearHistoryEntries({ historyMap: historyCache, historyKey: chatId })
           }
           log.info('dispatch', `deliver(${info.kind}): ${JSON.stringify(payload)}`);
 
@@ -369,5 +421,6 @@ export async function handlePokeEvent(
     messageId: `poke_${event.user_id}_${Date.now()}`,
     content: `[动作]\n${pokeMessage}`,
     timestamp: Date.now(),
+    targetId: String(event.target_id),
   });
 }
