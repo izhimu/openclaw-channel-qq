@@ -2,11 +2,15 @@ import type {
   GetFileReq,
   GetFileResp,
   GetMsgReq,
-  GetMsgResp, GetStatusResp,
+  GetMsgResp,
+  GetStatusResp,
+  GetLoginInfoResp,
   NapCatResp,
   SendMsgReq,
   SendMsgResp,
-  SetInputStatusReq
+  SetInputStatusReq,
+  GetFriendListResp,
+  GetGroupListResp
 } from "../types";
 import pLimit from 'p-limit';
 import { Logger as log } from "../utils/index.js"
@@ -161,4 +165,40 @@ export async function getStatus(): Promise<NapCatResp<GetStatusResp>> {
     return failResp();
   }
   return connection.sendRequest("get_status")
+}
+
+/**
+ * 获取登录信息
+ */
+export async function getLoginInfo(): Promise<NapCatResp<GetLoginInfoResp>> {
+  const connection = getConnection();
+  if (!connection) {
+    log.warn("request", `No connection available`);
+    return failResp();
+  }
+  return connection.sendRequest("get_login_info")
+}
+
+/**
+ * 获取好友列表
+ */
+export async function getFriendList(): Promise<NapCatResp<GetFriendListResp[]>> {
+  const connection = getConnection();
+  if (!connection) {
+    log.warn("request", `No connection available`);
+    return failResp();
+  }
+  return connection.sendRequest("get_friend_list")
+}
+
+/**
+ * 获取群列表
+ */
+export async function getGroupList(): Promise<NapCatResp<GetGroupListResp[]>> {
+  const connection = getConnection();
+  if (!connection) {
+    log.warn("request", `No connection available`);
+    return failResp();
+  }
+  return connection.sendRequest("get_group_list")
 }

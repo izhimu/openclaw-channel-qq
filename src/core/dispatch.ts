@@ -3,13 +3,27 @@
  * Handles routing and dispatching incoming messages to the AI
  */
 
-import type { ReplyPayload } from "openclaw/plugin-sdk";
+import {
+  type ReplyPayload,
+  buildPendingHistoryContextFromMap,
+  clearHistoryEntries,
+  recordPendingHistoryEntry,
+  resolveInboundRouteEnvelopeBuilderWithRuntime
+} from "openclaw/plugin-sdk";
 import type {
   DispatchMessageMedia,
   DispatchMessageParams,
   OpenClawMessage,
 } from '../types';
-import { getRuntime, getContext } from './runtime.js'
+import {
+  getRuntime,
+  getContext,
+  getSession,
+  clearSession,
+  updateSession,
+  getLoginInfo,
+  historyCache
+} from './runtime.js'
 import { getFile, sendMsg, setInputStatus } from './request.js'
 import { napCatToOpenClawMessage, openClawToNapCatMessage } from '../adapters/message.js';
 import { Logger as log, markdownToText, buildMediaMessage } from '../utils/index.js';
@@ -116,7 +130,7 @@ async function sendMedia(isGroup: boolean, chatId: string, mediaUrl: string): Pr
  * Dispatch an incoming message to the AI for processing
  */
 export async function dispatchMessage(params: DispatchMessageParams): Promise<void> {
-  const { chatType, chatId, senderId, senderName, messageId, content, media, timestamp } = params;
+  let { chatType, chatId, senderId, senderName, messageId, content, media, timestamp, targetId } = params;
 
   const runtime = getRuntime();
   if (!runtime) {
@@ -130,32 +144,71 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
   }
 
   const isGroup = chatType === 'group';
-  const peerId = isGroup ? `group:${chatId}` : senderId;
+  const config = context.account;
 
-  const route = runtime.channel.routing.resolveAgentRoute({
+  // At 模式处理
+  if (isGroup && config.groupAtMode) {
+    const loginInfo = getLoginInfo();
+    const hasAtAll = content.includes('@全体成员');
+    const hasAtMe = loginInfo.userId && content.includes(`@${loginInfo.userId}`);
+    const hasPoke = content.includes('[动作]') && targetId === loginInfo.userId;
+
+    if (!hasAtAll && !hasAtMe && !hasPoke) {
+      log.debug('dispatch', `Skipping group message (not mentioned)`);
+      recordPendingHistoryEntry({
+        historyMap: historyCache,
+        historyKey: chatId,
+        limit: config.groupHistoryLimit,
+        entry: {
+          sender: `${senderName}(${senderId})`,
+          body: content,
+          timestamp: timestamp,
+          messageId: messageId,
+        },
+      })
+      return;
+    }
+  }
+
+  const { route, buildEnvelope } = resolveInboundRouteEnvelopeBuilderWithRuntime({
     cfg: context.cfg,
     channel: CHANNEL_ID,
+    accountId: context.accountId,
     peer: {
-      kind: 'group',
-      id: peerId,
+      kind: isGroup ? ("group" as const) : ("direct" as const),
+      id: chatId,
     },
+    runtime: runtime.channel,
+    sessionStore: context.cfg.session?.store
   });
-  log.debug('dispatch', `Resolved route: ${JSON.stringify(route)}`)
-  const envelopeOptions = runtime.channel.reply.resolveEnvelopeFormatOptions(context.cfg);
-  const body = runtime.channel.reply.formatInboundEnvelope({
+
+  // 终止信号
+  const session = getSession(route.sessionKey);
+  if (session.abortController) {
+    session.abortController.abort();
+    session.aborted = true;
+    log.info('dispatch', `Aborted previous session`)
+  }
+
+  if (isGroup) {
+    content = buildPendingHistoryContextFromMap({
+      historyMap: historyCache,
+      historyKey: chatId,
+      limit: config.groupHistoryLimit,
+      currentMessage: content,
+      formatEntry: (e) => `${e.sender}: ${e.body}`,
+    })
+  }
+
+  const fromLabel = isGroup ? `group:${chatId}` : senderName || `user:${senderId}`;
+  const { storePath, body } = buildEnvelope({
     channel: CHANNEL_ID,
-    from: senderName || senderId,
+    from: fromLabel,
     body: content,
     timestamp,
-    chatType: isGroup ? 'group' : 'direct',
-    sender: {
-      id: senderId,
-      name: senderName,
-    },
-    envelope: envelopeOptions,
   });
   log.debug('dispatch', `Inbound envelope: ${body}`)
-  const fromAddress = isGroup ? `qq:group:${chatId}` : `qq:${senderId}`;
+  const fromAddress = `qq:${fromLabel}`;
   const toAddress = `qq:${chatId}`;
   const ctxPayload = runtime.channel.reply.finalizeInboundContext({
     Body: body,
@@ -166,6 +219,7 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
     SessionKey: route.sessionKey,
     AccountId: route.accountId,
     ChatType: isGroup ? 'group' : 'direct',
+    ConversationLabel: fromLabel,
     SenderId: senderId,
     SenderName: senderName,
     Provider: CHANNEL_ID,
@@ -181,9 +235,19 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
 
   log.info('dispatch', `Dispatching to agent ${route.agentId}, session: ${route.sessionKey}`);
 
-  const messagesConfig = runtime.channel.reply.resolveEffectiveMessagesConfig(context.cfg, route.agentId);
+  await runtime.channel.session.recordInboundSession({
+    storePath,
+    sessionKey: route.sessionKey,
+    ctx: ctxPayload,
+    onRecordError(err): void {
+      log.error('dispatch', `Failed to record inbound session: ${err}`);
+    },
+  });
 
+  const messagesConfig = runtime.channel.reply.resolveEffectiveMessagesConfig(context.cfg, route.agentId);
   try {
+    session.abortController = new AbortController()
+    updateSession(route.sessionKey, session)
     await runtime.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
       ctx: ctxPayload,
       cfg: context.cfg,
@@ -202,12 +266,21 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
           }
         },
         deliver: async (payload: ReplyPayload, info: { kind: string }): Promise<void> => {
+          if (session.aborted) {
+            session.aborted = false;
+            log.info('dispatch', `aborted skipping`)
+            return;
+          }
+
+          if (isGroup) {
+            clearHistoryEntries({ historyMap: historyCache, historyKey: chatId })
+          }
           log.info('dispatch', `deliver(${info.kind}): ${JSON.stringify(payload)}`);
 
           if (payload.text && !payload.text.startsWith('MEDIA:')) {
             await sendText(isGroup, chatId, payload.text);
           }
-          if (payload.text && payload.text.startsWith('MEDIA:')){
+          if (payload.text && payload.text.startsWith('MEDIA:')) {
             await sendMedia(isGroup, chatId, payload.text.replace('MEDIA:', ''));
           }
           if (payload.mediaUrl) {
@@ -224,7 +297,9 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
           await sendText(isGroup, chatId, `[错误]\n${String(err)}`);
         },
       },
-      replyOptions: {},
+      replyOptions: {
+        abortSignal: session.abortController?.signal,
+      },
     });
 
     log.info('dispatch', `Dispatch completed`);
@@ -238,6 +313,7 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
         event_type: 2
       });
     }
+    clearSession(route.sessionKey);
   }
 }
 
@@ -345,5 +421,6 @@ export async function handlePokeEvent(
     messageId: `poke_${event.user_id}_${Date.now()}`,
     content: `[动作]\n${pokeMessage}`,
     timestamp: Date.now(),
+    targetId: String(event.target_id),
   });
 }

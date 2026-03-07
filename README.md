@@ -27,7 +27,7 @@
 </p>
 
 ---
-
+![demo.png](docs/demo.png)
 ## 目录
 
 - [功能特性](#功能特性)
@@ -67,6 +67,9 @@
 ```bash
 # 安装插件
 openclaw plugins install @izhimu/qq
+
+# 更新插件
+openclaw plugins update @izhimu/qq
 ```
 
 ### 本地开发安装
@@ -370,6 +373,17 @@ npm run build
 ---
 
 ## 更新日志
+
+### [0.4.0] - 2026-03-07
+
+#### 新增
+- 群 At 模式（`groupAtMode`）- 开启后只有被 @ 或 @全体成员 时才回复
+- 登录信息存储功能，获取并保存当前登录 QQ 号
+- 消息中断处理机制，新消息到来时正确终止上一条消息的回复
+
+#### 修复
+- 修复 abort 后 deliver 仍然发送已终止消息的问题
+- 修复 abortController 状态检查不准确的问题（使用独立 aborted 标志）
 
 ### [0.3.0] - 2026-02-12
 

@@ -1,4 +1,4 @@
-import type { RuntimeLogger } from "../types/index.js";
+import type { RuntimeLogger } from "../types";
 import { getRuntime } from "../core/runtime.js"
 
 function log(): RuntimeLogger {

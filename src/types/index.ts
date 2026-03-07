@@ -30,6 +30,9 @@ export type NapCatAction =
   | 'get_msg'
   | 'get_status'
   | 'get_file'
+  | 'get_login_info'
+  | 'get_friend_list'
+  | 'get_group_list'
   | 'set_input_status';
 
 // =============================================================================
@@ -142,16 +145,6 @@ export interface NapCatJsonSegment {
 export interface NapCatUnknownSegment {
   type: string;
   data: Record<string, unknown>;
-}
-
-// =============================================================================
-// Plugin Config Types
-// =============================================================================
-
-export interface QQConfig {
-  wsUrl: string;
-  accessToken?: string;
-  enabled: boolean;
 }
 
 // =============================================================================
@@ -366,6 +359,25 @@ export interface GetStatusResp {
   stat: Record<any, any>;
 }
 
+export interface GetLoginInfoResp {
+  user_id: number;
+  nickname: string;
+}
+
+export interface GetFriendListResp {
+  user_id: number;
+  nickname: string;
+}
+
+export interface GetGroupListResp {
+  group_id: number;
+  group_name: string;
+}
+
+// =============================================================================
+// Other Types
+// =============================================================================
+
 export interface DispatchMessageMedia {
   type?: string;
   path?: string;
@@ -381,10 +393,29 @@ export interface DispatchMessageParams {
   content: string;
   media?: DispatchMessageMedia;
   timestamp: number;
+  targetId?: string;
+}
+
+export interface QQConfig {
+  wsUrl: string;
+  accessToken?: string;
+  enabled: boolean;
+  groupAtMode: boolean;
+  groupHistoryLimit: number;
 }
 
 export type QQProbe = {
   ok: boolean;
   status?: number | null;
   error?: string | null;
-};
+}
+
+export type QQSession = {
+  abortController?: AbortController;
+  aborted?: boolean;
+}
+
+export type QQLoginInfo = {
+  userId: string;
+  nickname: string;
+}
