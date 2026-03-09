@@ -13,7 +13,7 @@ import {
 import type {
   DispatchMessageMedia,
   DispatchMessageParams,
-  OpenClawMessage,
+  OpenClawMessage, QQAllowConfig,
 } from '../types';
 import {
   getRuntime,
@@ -42,7 +42,7 @@ async function contentToPlainText(content: OpenClawMessage[]): Promise<string> {
           return c.text;
         case 'at':
           const target = c.isAll ? '@全体成员' : `@${c.userId}`;
-          return `[AT]${target}`;
+          return `[提及]${target}`;
         case 'image':
           return `[图片]${c.url}`;
         case 'audio':
@@ -160,18 +160,14 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
   const config = context.account;
 
   // At 模式处理
-  if (isGroup && config.groupAtMode) {
-    const loginInfo = getLoginInfo();
-    const hasAtAll = content.includes('[AT]@全体成员');
-    const hasAtMe = loginInfo.userId && content.includes(`[AT]@${loginInfo.userId}`);
-    const hasPoke = content.includes('[动作]') && targetId === loginInfo.userId;
-
-    if (!hasAtAll && !hasAtMe && !hasPoke) {
+  if (isGroup) {
+    const isMention = mention(content, chatId, targetId);
+    if (!isMention) {
       log.debug('dispatch', `Skipping group message (not mentioned)`);
       recordPendingHistoryEntry({
         historyMap: historyCache,
         historyKey: chatId,
-        limit: config.groupHistoryLimit,
+        limit: config.group.historyLimit,
         entry: {
           sender: `${senderName}(${senderId})`,
           body: content,
@@ -207,7 +203,7 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
     content = buildPendingHistoryContextFromMap({
       historyMap: historyCache,
       historyKey: chatId,
-      limit: config.groupHistoryLimit,
+      limit: config.group.historyLimit,
       currentMessage: content,
       formatEntry: (e) => `${e.sender}: ${e.body}`,
     })
@@ -348,6 +344,10 @@ export async function handleGroupMessage(
     };
   }
 ): Promise<void> {
+  if (!allow(event.user_id.toString(), event.group_id.toString())) {
+    log.debug('dispatch', `Ignoring group message from ${event.user_id}`)
+    return;
+  }
   const content = await napCatToOpenClawMessage(event.message);
 
   const plainText = await contentToPlainText(content);
@@ -383,6 +383,10 @@ export async function handlePrivateMessage(
     };
   }
 ): Promise<void> {
+  if (!allow(event.user_id.toString())) {
+    log.debug('dispatch', `Ignoring message from ${event.user_id}`)
+    return;
+  }
   const content = await napCatToOpenClawMessage(event.message);
 
   const plainText = await contentToPlainText(content);
@@ -419,6 +423,10 @@ export async function handlePokeEvent(
     raw_info?: Array<{ type: string; txt?: string }>;
   }
 ): Promise<void> {
+  if (!allow(event.user_id.toString(), event.group_id?.toString())) {
+    log.debug('dispatch', `Poke from ${event.user_id} is not allowed`)
+    return;
+  }
   const actionText = extractPokeActionText(event.raw_info);
   log.info('dispatch', `Poke from ${event.user_id}: ${actionText}`);
 
@@ -436,4 +444,68 @@ export async function handlePokeEvent(
     timestamp: Date.now(),
     targetId: String(event.target_id),
   });
+}
+
+function allow(userId: string, groupId?: string): boolean {
+  const context = getContext();
+  if (!context) {
+    log.warn('dispatch', `No gateway context`);
+    return false;
+  }
+  const { account } = context
+  if (groupId) {
+    let groupConfig = account.groups[groupId]
+    log.debug('dispatch', `Custom config: ${JSON.stringify(groupConfig)}`)
+    if (!groupConfig) {
+      groupConfig = account.group
+      log.debug('dispatch', `Use global config: ${JSON.stringify(groupConfig)}`)
+    }
+    return allowJudgment(groupConfig, userId)
+  }
+  return allowJudgment(account, userId);
+}
+
+function allowJudgment(config: QQAllowConfig, userId: string): boolean {
+  if (config.denyFrom.includes(userId)) {
+    log.debug('dispatch', `User ${userId} is denied`);
+    return false;
+  }
+  if (config.policy === 'allow') {
+    log.debug('dispatch', `User ${userId} is allowed`);
+    return true;
+  }
+  if (config.policy === 'deny') {
+    log.debug('dispatch', `User ${userId} is denied`);
+    return false
+  }
+  if (config.allowFrom.includes(userId)){
+    log.debug('dispatch', `User ${userId} is allowed`);
+    return true
+  }
+  return false;
+}
+
+function mention(content: string, groupId: string, targetId?: string): boolean {
+  const context = getContext();
+  if (!context) {
+    log.warn('dispatch', `No gateway context`);
+    return false;
+  }
+  const { account } = context;
+  let config = account.groups[groupId]
+  log.debug('dispatch', `Custom config: ${JSON.stringify(config)}`)
+  if (!config) {
+    config = account.group
+    log.debug('dispatch', `Use global config: ${JSON.stringify(config)}`)
+  }
+  const loginInfo = getLoginInfo();
+  const requireMention = !config.requireMention
+    || (content.includes('[提及]@全体成员')
+      || loginInfo.userId && content.includes(`[提及]@${loginInfo.userId}`));
+  const requirePoke = !config.requirePoke
+    || content.includes('[动作]') && targetId === loginInfo.userId;
+  const requireWake = !config.wakeWord
+    || content.includes(config.wakeWord);
+  log.debug('dispatch', `Require mention: ${requireMention}, require poke: ${requirePoke}, require wake: ${requireWake}`)
+  return requireMention || requirePoke || requireWake
 }

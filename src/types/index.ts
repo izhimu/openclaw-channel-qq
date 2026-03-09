@@ -405,12 +405,25 @@ export interface DispatchMessageParams {
   targetId?: string;
 }
 
-export interface QQConfig {
+export interface QQConfig extends QQAllowConfig {
   wsUrl: string;
   accessToken?: string;
   enabled: boolean;
-  groupAtMode: boolean;
-  groupHistoryLimit: number;
+  group: QQGroupConfig;
+  groups: Record<string, QQGroupConfig>;
+}
+
+export interface QQGroupConfig extends QQAllowConfig {
+  requireMention: boolean;
+  requirePoke: boolean;
+  historyLimit: number;
+  wakeWord?: string;
+}
+
+export interface QQAllowConfig {
+  policy: "allow" | "deny" | "allowlist";
+  allowFrom: string[];
+  denyFrom: string[];
 }
 
 export type QQProbe = {

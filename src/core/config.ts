@@ -34,8 +34,19 @@ export function resolveQQAccount(params: {
     enabled: config?.enabled !== false,
     wsUrl: config?.wsUrl ?? "",
     accessToken: config?.accessToken,
-    groupAtMode: config?.groupAtMode ?? true,
-    groupHistoryLimit: config?.groupHistoryLimit ?? 20,
+    policy: config?.policy ?? "allow",
+    allowFrom: config?.allowFrom ?? [],
+    denyFrom: config?.denyFrom ?? [],
+    group: {
+      requireMention: config?.group?.requireMention ?? true,
+      requirePoke: config?.group?.requirePoke ?? true,
+      policy: config?.policy ?? "allow",
+      historyLimit: config?.group?.historyLimit ?? 20,
+      allowFrom: config?.group?.allowFrom ?? [],
+      denyFrom: config?.group?.denyFrom ?? [],
+      wakeWord: config?.group?.wakeWord ?? undefined,
+    },
+    groups: {}
   };
 }
 
@@ -49,10 +60,23 @@ const wsUrlSchema = z.string()
   .default("ws://127.0.0.1:3001")
   .describe("NapCat Websocket 连接地址");
 
+export const QQGroupConfigSchema = z.object({
+  requireMention: z.boolean().default(true).describe("群组是否需要@响应"),
+  requirePoke: z.boolean().default(true).describe("群组支持戳一戳响应"),
+  historyLimit: z.number().default(20).describe("群组历史记录信息条数"),
+  policy: z.enum(["allow", "deny", "allowlist"]).default("allow").describe("群组策略"),
+  allowFrom: z.array(z.string()).default([]).describe("群组允许的用户").optional(),
+  denyFrom: z.array(z.string()).default([]).describe("群组拒绝的用户").optional(),
+  wakeWord: z.string().describe("群组唤醒词").optional(),
+});
+
 export const QQConfigSchema = z.object({
   wsUrl: wsUrlSchema,
   accessToken: z.string().default("access-token").describe("NapCat Websocket Token"),
   enable: z.boolean().default(true).describe("是否启用"),
-  groupAtMode: z.boolean().default(true).describe("群组响应模式：默认启用，只有在被@时才会响应"),
-  groupHistoryLimit: z.number().default(20).describe("群组历史记录信息条数限制"),
+  policy: z.enum(["allow", "deny", "allowlist"]).default("allow").describe("私聊策略"),
+  allowFrom: z.array(z.string()).default([]).describe("允许的用户").optional(),
+  denyFrom: z.array(z.string()).default([]).describe("拒绝的用户").optional(),
+  group: QQGroupConfigSchema,
+  groups: z.record(z.string(), QQGroupConfigSchema).default({}).describe("特定群组配置").optional(),
 });
