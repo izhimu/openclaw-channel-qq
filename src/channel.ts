@@ -31,7 +31,8 @@ import {
   setConnection,
   getConnection,
   clearConnection,
-  setLoginInfo
+  setLoginInfo,
+  getContext
 } from "./core/runtime.js";
 import { ConnectionManager } from "./core/connection.js";
 import { openClawToNapCatMessage } from "./adapters/message.js";
@@ -295,8 +296,19 @@ async function outboundSend(ctx: ChannelOutboundContext): Promise<OutboundDelive
 
   const content: OpenClawMessage[] = []
 
+  const context = getContext();
+  if (!context) {
+    log.warn('dispatch', `No gateway context`);
+    return {
+      channel: CHANNEL_ID,
+      messageId: "",
+      error: new Error(`No gateway context`),
+      deliveredAt: Date.now(),
+    }
+  }
+
   if (text) {
-    content.push({ type: "text", text: markdownToText(text) })
+    content.push({ type: "text", text: context.account.markdownFormat ? markdownToText(text) : text })
   }
   if (mediaUrl) {
     content.push(buildMediaMessage(mediaUrl))

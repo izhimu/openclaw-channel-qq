@@ -35,19 +35,21 @@ export function resolveQQAccount(params: {
     wsUrl: config?.wsUrl ?? "",
     accessToken: config?.accessToken,
     markdownFormat: config?.markdownFormat ?? true,
-    policy: config?.policy ?? "allow",
-    allowFrom: config?.allowFrom ?? [],
-    denyFrom: config?.denyFrom ?? [],
-    group: {
-      requireMention: config?.group?.requireMention ?? true,
-      requirePoke: config?.group?.requirePoke ?? true,
-      policy: config?.policy ?? "allow",
-      historyLimit: config?.group?.historyLimit ?? 20,
-      allowFrom: config?.group?.allowFrom ?? [],
-      denyFrom: config?.group?.denyFrom ?? [],
-      wakeWord: config?.group?.wakeWord ?? undefined,
+    messageDirect: {
+      policy: config?.messageDirect?.policy ?? "allow",
+      allowFrom: config?.messageDirect?.allowFrom ?? [],
+      denyFrom: config?.messageDirect?.denyFrom ?? [],
     },
-    groups: {}
+    messageGroup: {
+      requireMention: config?.messageGroup?.requireMention ?? true,
+      requirePoke: config?.messageGroup?.requirePoke ?? true,
+      policy: config?.messageGroup?.policy ?? "allow",
+      historyLimit: config?.messageGroup?.historyLimit ?? 20,
+      allowFrom: config?.messageGroup?.allowFrom ?? [],
+      denyFrom: config?.messageGroup?.denyFrom ?? [],
+      wakeWord: config?.messageGroup?.wakeWord ?? undefined,
+    },
+    messageGroupsCustom: config?.messageGroupsCustom ?? {},
   };
 }
 
@@ -61,6 +63,12 @@ const wsUrlSchema = z.string()
   .default("ws://127.0.0.1:3001")
   .describe("NapCat Websocket 连接地址");
 
+export const QQDirectConfigSchema = z.object({
+  policy: z.enum(["allow", "deny", "allowlist"]).default("allow").describe("私聊策略"),
+  allowFrom: z.array(z.string()).default([]).describe("允许的用户").optional(),
+  denyFrom: z.array(z.string()).default([]).describe("拒绝的用户").optional(),
+}).describe("私聊全局配置");
+
 export const QQGroupConfigSchema = z.object({
   requireMention: z.boolean().default(true).describe("群组是否需要@响应"),
   requirePoke: z.boolean().default(true).describe("群组支持戳一戳响应"),
@@ -69,16 +77,14 @@ export const QQGroupConfigSchema = z.object({
   allowFrom: z.array(z.string()).default([]).describe("群组允许的用户").optional(),
   denyFrom: z.array(z.string()).default([]).describe("群组拒绝的用户").optional(),
   wakeWord: z.string().describe("群组唤醒词").optional(),
-});
+}).describe("群组全局配置");
 
 export const QQConfigSchema = z.object({
   wsUrl: wsUrlSchema,
   accessToken: z.string().default("access-token").describe("NapCat Websocket Token"),
   enable: z.boolean().default(true).describe("是否启用"),
   markdownFormat: z.boolean().default(true).describe("是否启动 Markdown 格式化转换"),
-  policy: z.enum(["allow", "deny", "allowlist"]).default("allow").describe("私聊策略"),
-  allowFrom: z.array(z.string()).default([]).describe("允许的用户").optional(),
-  denyFrom: z.array(z.string()).default([]).describe("拒绝的用户").optional(),
-  group: QQGroupConfigSchema,
-  groups: z.record(z.string(), QQGroupConfigSchema).default({}).describe("特定群组配置").optional(),
+  messageDirect: QQDirectConfigSchema,
+  messageGroup: QQGroupConfigSchema,
+  messageGroupsCustom: z.record(z.string(), QQGroupConfigSchema).default({}).describe("特定群组配置").optional(),
 });

@@ -405,13 +405,14 @@ export interface DispatchMessageParams {
   targetId?: string;
 }
 
-export interface QQConfig extends QQAllowConfig {
+export interface QQConfig {
   wsUrl: string;
   accessToken?: string;
   enabled: boolean;
   markdownFormat: boolean;
-  group: QQGroupConfig;
-  groups: Record<string, QQGroupConfig>;
+  messageDirect: QQAllowConfig
+  messageGroup: QQGroupConfig;
+  messageGroupsCustom: Record<string, QQGroupConfig>;
 }
 
 export interface QQGroupConfig extends QQAllowConfig {

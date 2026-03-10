@@ -13,7 +13,7 @@ import {
 import type {
   DispatchMessageMedia,
   DispatchMessageParams,
-  OpenClawMessage, QQAllowConfig,
+  OpenClawMessage, QQAllowConfig, QQConfig, QQGroupConfig,
 } from '../types';
 import {
   getRuntime,
@@ -107,8 +107,16 @@ async function contextToMedia(content: OpenClawMessage[]): Promise<DispatchMessa
 }
 
 async function sendText(isGroup: boolean, chatId: string, text: string): Promise<void> {
-  const cleanText = text.replace(/NO_REPLY\s*$/, '');
-  const messageSegments = [{ type: 'text', data: { text: markdownToText(cleanText) } }];
+  const contextText = text.replace(/NO_REPLY\s*$/, '');
+  const context = getContext();
+  if (!context) {
+    log.warn('dispatch', `No gateway context`);
+    return;
+  }
+  const messageSegments = [{
+    type: 'text',
+    data: { text: context.account.markdownFormat ? markdownToText(contextText) : contextText }
+  }];
 
   try {
     await sendMsg({
@@ -164,10 +172,11 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
     const isMention = mention(content, chatId, targetId);
     if (!isMention) {
       log.debug('dispatch', `Skipping group message (not mentioned)`);
+      const groupConfig = getGroupConfig(chatId, config);
       recordPendingHistoryEntry({
         historyMap: historyCache,
         historyKey: chatId,
-        limit: config.group.historyLimit,
+        limit: groupConfig.historyLimit ?? 20,
         entry: {
           sender: `${senderName}(${senderId})`,
           body: content,
@@ -200,10 +209,11 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
   }
 
   if (isGroup) {
+    const groupConfig = getGroupConfig(chatId, config);
     content = buildPendingHistoryContextFromMap({
       historyMap: historyCache,
       historyKey: chatId,
-      limit: config.group.historyLimit,
+      limit: groupConfig.historyLimit ?? 20,
       currentMessage: content,
       formatEntry: (e) => `${e.sender}: ${e.body}`,
     })
@@ -446,27 +456,34 @@ export async function handlePokeEvent(
   });
 }
 
+function getGroupConfig(groupId: string, config: QQConfig): QQGroupConfig {
+  log.debug('dispatch', `All Custom config: ${JSON.stringify(config.messageGroupsCustom)}`)
+  let groupConfig = config.messageGroupsCustom[groupId];
+  if (!groupConfig) {
+    groupConfig = config.messageGroup
+    log.debug('dispatch', `Use global config: ${JSON.stringify(groupConfig)}`)
+  } else {
+    groupConfig = {
+      ...config.messageGroup,
+      ...groupConfig,
+    }
+  }
+  log.debug('dispatch', `Final config: ${JSON.stringify(groupConfig)}`)
+  return groupConfig
+}
+
 function allow(userId: string, groupId?: string): boolean {
   const context = getContext();
   if (!context) {
     log.warn('dispatch', `No gateway context`);
     return false;
   }
-  const { account } = context
-  if (groupId) {
-    let groupConfig = account.groups[groupId]
-    log.debug('dispatch', `Custom config: ${JSON.stringify(groupConfig)}`)
-    if (!groupConfig) {
-      groupConfig = account.group
-      log.debug('dispatch', `Use global config: ${JSON.stringify(groupConfig)}`)
-    }
-    return allowJudgment(groupConfig, userId)
-  }
-  return allowJudgment(account, userId);
+  let config: QQAllowConfig = groupId ? getGroupConfig(groupId, context.account) : context.account.messageDirect;
+  return allowJudgment(config, userId);
 }
 
 function allowJudgment(config: QQAllowConfig, userId: string): boolean {
-  if (config.denyFrom.includes(userId)) {
+  if (config.denyFrom?.includes(userId)) {
     log.debug('dispatch', `User ${userId} is denied`);
     return false;
   }
@@ -478,7 +495,7 @@ function allowJudgment(config: QQAllowConfig, userId: string): boolean {
     log.debug('dispatch', `User ${userId} is denied`);
     return false
   }
-  if (config.allowFrom.includes(userId)){
+  if (config.allowFrom?.includes(userId)) {
     log.debug('dispatch', `User ${userId} is allowed`);
     return true
   }
@@ -491,21 +508,29 @@ function mention(content: string, groupId: string, targetId?: string): boolean {
     log.warn('dispatch', `No gateway context`);
     return false;
   }
-  const { account } = context;
-  let config = account.groups[groupId]
-  log.debug('dispatch', `Custom config: ${JSON.stringify(config)}`)
-  if (!config) {
-    config = account.group
-    log.debug('dispatch', `Use global config: ${JSON.stringify(config)}`)
-  }
+  let config = getGroupConfig(groupId, context.account)
   const loginInfo = getLoginInfo();
-  const requireMention = !config.requireMention
-    || (content.includes('[提及]@全体成员')
-      || loginInfo.userId && content.includes(`[提及]@${loginInfo.userId}`));
-  const requirePoke = !config.requirePoke
-    || content.includes('[动作]') && targetId === loginInfo.userId;
-  const requireWake = !config.wakeWord
-    || content.includes(config.wakeWord);
-  log.debug('dispatch', `Require mention: ${requireMention}, require poke: ${requirePoke}, require wake: ${requireWake}`)
-  return requireMention || requirePoke || requireWake
+
+  const isMentionEnabled = !!config?.requireMention;
+  const isPokeEnabled = !!config?.requirePoke;
+  const isWakeEnabled = !!config?.wakeWord?.trim();
+
+  if (!isMentionEnabled && !isPokeEnabled && !isWakeEnabled) {
+    log.debug('dispatch', 'All requires are disabled, returning true by default.');
+    return true;
+  }
+
+  const requireMention = isMentionEnabled &&
+    (content.includes('[提及]@全体成员') ||
+      (!!loginInfo?.userId && content.includes(`[提及]@${loginInfo.userId}`)));
+
+  const requirePoke = isPokeEnabled &&
+    (content.includes('[动作]') && targetId === loginInfo?.userId);
+
+  const requireWake = isWakeEnabled &&
+    content.includes(config.wakeWord ?? "");
+
+  log.debug('dispatch', `Require mention: ${requireMention}, require poke: ${requirePoke}, require wake: ${requireWake}`);
+
+  return requireMention || requirePoke || requireWake;
 }
