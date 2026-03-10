@@ -409,6 +409,7 @@ export interface QQConfig extends QQAllowConfig {
   wsUrl: string;
   accessToken?: string;
   enabled: boolean;
+  markdownFormat: boolean;
   group: QQGroupConfig;
   groups: Record<string, QQGroupConfig>;
 }
