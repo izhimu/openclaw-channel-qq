@@ -69,7 +69,7 @@
 openclaw plugins install @izhimu/qq
 
 # 更新插件
-openclaw plugins update @izhimu/qq
+openclaw plugins update qq
 ```
 
 ### 本地开发安装
