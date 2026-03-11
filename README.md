@@ -27,7 +27,7 @@
 </p>
 
 ---
-![demo.png](docs/demo.png)
+![demo.jpg](docs/demo.jpg)
 ## 目录
 
 - [功能特性](#功能特性)
@@ -174,6 +174,8 @@ openclaw gateway restart
   }
 }
 ```
+
+![config.png](docs/config.png)
 
 ---
 
