@@ -144,6 +144,10 @@ openclaw gateway restart
 | `wsUrl` | `string` | 是 | - | NapCat WebSocket 地址 |
 | `accessToken` | `string` | 否 | `""` | 访问令牌（如配置了认证） |
 | `enabled` | `boolean` | 否 | `true` | 是否启用该账号 |
+| `markdownFormat` | `boolean` | 否 | `true` | 是否启用 Markdown 格式化转换 |
+| `messageDirect` | `object` | 否 | - | 私聊全局配置（策略、黑白名单） |
+| `messageGroup` | `object` | 否 | - | 群组全局配置（@响应、戳一戳、唤醒词等） |
+| `messageGroupsCustom` | `object` | 否 | `{}` | 特定群组的独立配置 |
 
 ### 配置示例
 
@@ -153,7 +157,19 @@ openclaw gateway restart
     "qq": {
       "wsUrl": "ws://127.0.0.1:3001",
       "accessToken": "your-token",
-      "enabled": true
+      "enabled": true,
+      "markdownFormat": true,
+      "messageDirect": {
+        "policy": "allow",
+        "denyFrom": ["12345678"]
+      },
+      "messageGroup": {
+        "requireMention": true,
+        "requirePoke": true,
+        "policy": "allowlist",
+        "allowFrom": ["123456"],
+        "wakeWord": "小艺"
+      }
     }
   }
 }
@@ -262,6 +278,7 @@ openclaw-channel-qq/
 | `reply` | ✓ | ✓ | 消息回复 |
 | `record` | ✓ | ✓ | 语音消息 |
 | `file` | ✓ | ✓ | 文件 |
+| `video` | ✓ | - | 视频消息 |
 | `json` | ✓ | - | JSON 富文本 |
 
 ### OneBot 11 接口
@@ -373,6 +390,24 @@ npm run build
 ---
 
 ## 更新日志
+
+### [0.5.0] - 2026-03-11
+
+#### 新增
+- **多媒体支持增强**：新增对视频（`video`）消息类型的入站支持。
+- **细粒度访问控制**：
+    - 新增 `messageDirect` 和 `messageGroup` 配置项，支持私聊和群组的独立策略控制（`allow`, `deny`, `allowlist`）。
+    - 支持基于用户 ID 的黑白名单过滤。
+- **群组触发增强**：
+    - 支持自定义群组唤醒词（`wakeWord`）。
+    - 支持开启/关闭戳一戳（`requirePoke`）响应。
+    - 支持针对特定群组进行独立配置（`messageGroupsCustom`）。
+- **Markdown 优化**：新增 `markdownFormat` 开关，可选择是否将 Markdown 转换为纯文本。
+
+#### 优化
+- **配置结构重构**：重构了配置解析逻辑，提高了配置项的灵活性。
+- **消息文本转换**：优化了多媒体消息（图片、视频、音频、文件等）在日志和历史记录中的纯文本展示效果。
+- **稳定性**：增加了 Gateway Context 的预检，提升了系统的健壮性。
 
 ### [0.4.0] - 2026-03-07
 
