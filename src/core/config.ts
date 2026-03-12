@@ -35,6 +35,7 @@ export function resolveQQAccount(params: {
   return {
     enabled: config?.enabled !== false,
     wsUrl: config?.wsUrl ?? "",
+    token: config?.accessToken ?? "",
     accessToken: config?.accessToken,
     markdownFormat: config?.markdownFormat ?? true,
     messageDirect: {

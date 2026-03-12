@@ -11,7 +11,8 @@ import {
   deleteAccountFromConfigSection,
   applyAccountNameToChannelSection,
   migrateBaseNameToDefaultAccount,
-  normalizeAccountId
+  normalizeAccountId,
+  waitUntilAbort
 } from "openclaw/plugin-sdk";
 import type {
   QQConfig,
@@ -69,7 +70,7 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
   config: {
     listAccountIds: (cfg) => listQQAccountIds(cfg),
     resolveAccount: (cfg) => resolveQQAccount({ cfg }),
-    isConfigured: (account) => Boolean(account?.wsUrl),
+    isConfigured: (account) => !!account.accessToken?.trim(),
     setAccountEnabled: ({ cfg, accountId, enabled }) =>
       setAccountEnabledInConfigSection({
         cfg,
@@ -84,6 +85,10 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
         sectionKey: "qq",
         accountId,
       }),
+    describeAccount: (account) => ({
+      accountId: DEFAULT_ACCOUNT_ID,
+      tokenSource: account.accessToken ? "config" : "none"
+    }),
   },
   configSchema: buildChannelConfigSchema(QQConfigSchema),
   setup: {
@@ -199,6 +204,8 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
         enabled: account.enabled,
         configured: Boolean(account.wsUrl?.trim()),
         linked: Boolean(account.wsUrl?.trim()),
+        running: runtime?.running ?? false,
+        connected: runtime?.connected ?? false,
         lastStartAt: runtime?.lastStartAt ?? null,
         lastStopAt: runtime?.lastStopAt ?? null,
         lastError: runtime?.lastError ?? null,
@@ -212,50 +219,30 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
   gateway: {
     startAccount: async (ctx) => {
       setContext(ctx)
-      const { account } = ctx
+      const { account, abortSignal } = ctx
 
-      log.debug('gateway', `Starting gateway`);
+      log.info('gateway', `Starting gateway`);
+
+      setContextStatus({
+        running: true,
+        lastStartAt: Date.now(),
+      });
 
       // 检查是否已存在连接
       const existingConnection = getConnection();
       if (existingConnection) {
         log.debug('gateway', `A connection is already running`);
-        return;
+        return waitUntilAbort(abortSignal);
       }
 
-      // Create new connection manager
-      const connection = new ConnectionManager(account);
-
-      connection.on("event", (event) => eventListener(event));
-      connection.on("state-changed", (status: ConnectionStatus) => {
-        log.info('gateway', `State: ${status.state}`);
-        if (status.state === "connected") {
-          setContextStatus({ connected: true, lastConnectedAt: Date.now(), });
-        } else if (status.state === "disconnected" || status.state === "failed") {
-          setContextStatus({ connected: false, lastError: status.error, });
-        }
-      });
-      connection.on("reconnecting", (info: { reason: string; totalAttempts: number }) => {
-        log.info('gateway', `Reconnecting: ${info.reason}, attempt ${info.totalAttempts}`);
-        setContextStatus({ lastError: `Reconnecting (${info.reason})`, reconnectAttempts: info.totalAttempts, });
-      });
-
       try {
+        const connection = new ConnectionManager(account);
+        onEvent(connection);
         await connection.start();
         setConnection(connection);
-        // 获取登录信息
-        const info = await getLoginInfo();
-        if (info.data) {
-          setLoginInfo({
-            userId: info.data.user_id.toString(),
-            nickname: info.data.nickname,
-          })
-        }
-        // Update start time
-        setContextStatus({
-          lastStartAt: Date.now(),
-        });
+        await loadLoginInfo();
         log.info('gateway', `Started gateway`);
+        return waitUntilAbort(abortSignal);
       } catch (error) {
         log.error('gateway', `Failed to start gateway:`, error);
         setContextStatus({
@@ -401,4 +388,44 @@ async function getGroups(): Promise<ChannelDirectoryEntry[]> {
     id: group.group_id.toString(),
     name: group.group_name,
   }));
+}
+
+function onEvent(connection: ConnectionManager) {
+  connection.on("event", (event) => eventListener(event));
+  connection.on("state-changed", (status: ConnectionStatus) => {
+    log.info('gateway', `Connection state: ${status.state}`);
+    if (status.state === "connected") {
+      setContextStatus({
+        connected: true,
+        lastConnectedAt: Date.now(),
+      });
+    } else if (status.state === "disconnected" || status.state === "failed") {
+      setContextStatus({
+        connected: false,
+        lastError: status.error,
+        lastDisconnect: {
+          at: Date.now(),
+          error: status.error,
+        },
+      });
+    }
+  });
+  connection.on("reconnecting", (info: { reason: string; totalAttempts: number }) => {
+    log.info('gateway', `Reconnecting: ${info.reason}, attempt ${info.totalAttempts}`);
+    setContextStatus({
+      lastError: `Reconnecting (${info.reason})`,
+      reconnectAttempts: info.totalAttempts,
+    });
+  });
+}
+
+async function loadLoginInfo() {
+  // 获取登录信息
+  const info = await getLoginInfo();
+  if (info.data) {
+    setLoginInfo({
+      userId: info.data.user_id.toString(),
+      nickname: info.data.nickname,
+    })
+  }
 }

@@ -407,6 +407,7 @@ export interface DispatchMessageParams {
 
 export interface QQConfig {
   wsUrl: string;
+  token?: string;
   accessToken?: string;
   enabled: boolean;
   markdownFormat: boolean;
