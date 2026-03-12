@@ -84,7 +84,7 @@ export const QQGroupConfigSchema = z.object({
 export const QQConfigSchema = z.object({
   wsUrl: wsUrlSchema,
   accessToken: z.string().default("access-token").describe("NapCat Websocket Token"),
-  enable: z.boolean().default(true).describe("是否启用"),
+  enabled: z.boolean().default(true).describe("是否启用"),
   markdownFormat: z.boolean().default(true).describe("是否启动 Markdown 格式化转换"),
   messageDirect: QQDirectConfigSchema,
   messageGroup: QQGroupConfigSchema,
