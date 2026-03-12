@@ -9,7 +9,7 @@ import { z } from "zod";
 
 export const CHANNEL_ID = "qq"
 
-export const DEBUG_MODE = true
+export const DEBUG_MODE = false
 
 /**
  * 列出所有 QQ 账户ID
