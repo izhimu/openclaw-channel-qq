@@ -1,4 +1,5 @@
 import type { RuntimeLogger } from "../types";
+import { DEBUG_MODE } from "../core/config"
 import { getRuntime } from "../core/runtime.js"
 
 function log(): RuntimeLogger {
@@ -12,7 +13,9 @@ function param(args: unknown[]): string {
 
 export class Logger {
   static debug(category: string, message: string, ...args: unknown[]): void {
-    log().debug?.(`[${category}] ${message}${param(args)}`);
+    if (DEBUG_MODE) {
+      log().debug?.(`[${category}] ${message}${param(args)}`);
+    }
   }
 
   static info(category: string, message: string, ...args: unknown[]): void {
