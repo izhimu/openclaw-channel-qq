@@ -3,12 +3,15 @@
  * Main plugin entry point
  */
 
-import type { ChannelPlugin, ChannelOutboundContext, ChannelDirectoryEntry } from "openclaw/plugin-sdk";
+import type { ChannelPlugin, ChannelOutboundContext, ChannelDirectoryEntry, OpenClawConfig } from "openclaw/plugin-sdk";
 import {
   DEFAULT_ACCOUNT_ID,
   buildChannelConfigSchema,
   setAccountEnabledInConfigSection,
-  deleteAccountFromConfigSection
+  deleteAccountFromConfigSection,
+  applyAccountNameToChannelSection,
+  migrateBaseNameToDefaultAccount,
+  normalizeAccountId
 } from "openclaw/plugin-sdk";
 import type {
   QQConfig,
@@ -66,7 +69,6 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
   config: {
     listAccountIds: (cfg) => listQQAccountIds(cfg),
     resolveAccount: (cfg) => resolveQQAccount({ cfg }),
-    isEnabled: (account) => Boolean(account?.enabled),
     isConfigured: (account) => Boolean(account?.wsUrl),
     setAccountEnabled: ({ cfg, accountId, enabled }) =>
       setAccountEnabledInConfigSection({
@@ -84,6 +86,58 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
       }),
   },
   configSchema: buildChannelConfigSchema(QQConfigSchema),
+  setup: {
+    resolveAccountId: ({ accountId }) => normalizeAccountId(accountId),
+    applyAccountName: ({ cfg, accountId, name }) =>
+      applyAccountNameToChannelSection({
+        cfg: cfg,
+        channelKey: "qq",
+        accountId,
+        name,
+      }),
+    applyAccountConfig: ({ cfg, accountId, input }) => {
+      const namedConfig = applyAccountNameToChannelSection({
+        cfg,
+        channelKey: "qq",
+        accountId,
+        name: input.name,
+      });
+      const next = accountId !== DEFAULT_ACCOUNT_ID ? migrateBaseNameToDefaultAccount({
+        cfg: namedConfig,
+        channelKey: "qq",
+      }) : namedConfig;
+
+      if (accountId === DEFAULT_ACCOUNT_ID) {
+        return {
+          ...next,
+          channels: {
+            ...next.channels,
+            qq: {
+              ...next.channels?.["qq"],
+              enabled: true,
+            },
+          },
+        } as OpenClawConfig;
+      }
+      return {
+        ...next,
+        channels: {
+          ...next.channels,
+          qq: {
+            ...next.channels?.["qq"],
+            enabled: true,
+            accounts: {
+              ...next.channels?.["qq"]?.accounts,
+              [accountId]: {
+                ...next.channels?.["qq"]?.accounts?.[accountId],
+                enabled: true,
+              },
+            },
+          },
+        },
+      } as OpenClawConfig;
+    }
+  },
   messaging: {
     normalizeTarget: (target: string) => {
       return target.replace(/^qq:/i, "");
@@ -108,46 +162,32 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
     defaultRuntime: {
       accountId: DEFAULT_ACCOUNT_ID,
       name: "QQ",
-      enabled: false,
-      configured: false,
-      linked: false,
       running: false,
       connected: false,
       reconnectAttempts: 0,
       lastConnectedAt: null,
+      lastDisconnect: null,
       lastStartAt: null,
       lastStopAt: null,
       lastError: null,
-      lastInboundAt: null,
-      lastOutboundAt: null,
     },
     buildChannelSummary: ({ snapshot }) => ({
-      enabled: snapshot.enabled ?? false,
       configured: snapshot.configured ?? false,
-      linked: snapshot.linked ?? false,
       running: snapshot.running ?? false,
-      connected: snapshot.connected ?? false,
-      reconnectAttempts: snapshot.reconnectAttempts ?? 0,
-      lastConnectedAt: snapshot.lastConnectedAt ?? null,
       lastStartAt: snapshot.lastStartAt ?? null,
       lastStopAt: snapshot.lastStopAt ?? null,
       lastError: snapshot.lastError ?? null,
-      lastInboundAt: snapshot.lastInboundAt ?? null,
-      lastOutboundAt: snapshot.lastOutboundAt ?? null,
       probe: snapshot.probe,
       lastProbeAt: snapshot.lastProbeAt ?? null,
-
     }),
     probeAccount: async (): Promise<QQProbe> => {
       const status = await getStatus();
-      const ok = status.status === "ok";
+      log.debug('gateway', `Probe status: ${status.status}`)
       setContextStatus({
-        linked: ok,
-        running: ok,
         lastProbeAt: Date.now(),
       });
       return {
-        ok: ok,
+        ok: status.status === "ok",
         status: status.retcode,
         error: status.status === "failed" ? status.msg : null,
       }
@@ -156,12 +196,9 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
       return {
         accountId: DEFAULT_ACCOUNT_ID,
         name: "QQ",
-        enabled: account.enabled ?? false,
+        enabled: account.enabled,
         configured: Boolean(account.wsUrl?.trim()),
-        linked: runtime?.linked ?? false,
-        running: runtime?.running ?? false,
-        connected: runtime?.connected ?? false,
-        reconnectAttempts: runtime?.reconnectAttempts ?? 0,
+        linked: Boolean(account.wsUrl?.trim()),
         lastStartAt: runtime?.lastStartAt ?? null,
         lastStopAt: runtime?.lastStopAt ?? null,
         lastError: runtime?.lastError ?? null,
@@ -177,12 +214,12 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
       setContext(ctx)
       const { account } = ctx
 
-      log.info('gateway', `Starting gateway`);
+      log.debug('gateway', `Starting gateway`);
 
       // 检查是否已存在连接
       const existingConnection = getConnection();
       if (existingConnection) {
-        log.warn('gateway', `A connection is already running`);
+        log.debug('gateway', `A connection is already running`);
         return;
       }
 
@@ -193,27 +230,14 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
       connection.on("state-changed", (status: ConnectionStatus) => {
         log.info('gateway', `State: ${status.state}`);
         if (status.state === "connected") {
-          setContextStatus({
-            linked: true,
-            connected: true,
-            lastConnectedAt: Date.now(),
-          });
+          setContextStatus({ connected: true, lastConnectedAt: Date.now(), });
         } else if (status.state === "disconnected" || status.state === "failed") {
-          setContextStatus({
-            linked: false,
-            connected: false,
-            lastError: status.error,
-          });
+          setContextStatus({ connected: false, lastError: status.error, });
         }
       });
       connection.on("reconnecting", (info: { reason: string; totalAttempts: number }) => {
         log.info('gateway', `Reconnecting: ${info.reason}, attempt ${info.totalAttempts}`);
-        setContextStatus({
-          linked: false,
-          connected: false,
-          lastError: `Reconnecting (${info.reason})`,
-          reconnectAttempts: info.totalAttempts,
-        });
+        setContextStatus({ lastError: `Reconnecting (${info.reason})`, reconnectAttempts: info.totalAttempts, });
       });
 
       try {
@@ -229,18 +253,12 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
         }
         // Update start time
         setContextStatus({
-          running: true,
-          linked: true,
-          connected: true,
           lastStartAt: Date.now(),
         });
         log.info('gateway', `Started gateway`);
       } catch (error) {
         log.error('gateway', `Failed to start gateway:`, error);
         setContextStatus({
-          running: false,
-          linked: false,
-          connected: false,
           lastError: error instanceof Error ? error.message : 'Failed to start gateway',
         });
         throw error;
@@ -256,8 +274,6 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
 
       setContextStatus({
         running: false,
-        linked: false,
-        connected: false,
         lastStopAt: Date.now(),
       });
       clearContext()
@@ -280,7 +296,20 @@ export const qqPlugin: ChannelPlugin<QQConfig> = {
     listPeersLive: getFriends,
     listGroups: getGroups,
     listGroupsLive: getGroups,
-  }
+  },
+  heartbeat: {
+    checkReady: async ({ cfg }) => {
+      const account = resolveQQAccount({ cfg });
+      if (!account.wsUrl) {
+        return { ok: false, reason: "not-configured" };
+      }
+      const connection = getConnection();
+      if (!connection?.isConnected) {
+        return { ok: false, reason: "not-connected" };
+      }
+      return { ok: true, reason: "ok" };
+    },
+  },
 };
 
 async function outboundSend(ctx: ChannelOutboundContext): Promise<OutboundDeliveryResult> {

@@ -41,10 +41,7 @@ export function clearContext(): void {
 
 export function setContextStatus(next: Omit<ChannelAccountSnapshot, 'accountId'>): void {
   if (context) {
-    context.setStatus({
-      ...context.getStatus(),
-      ...next,
-    });
+    context.setStatus(<ChannelAccountSnapshot>next);
   }
 }
 
