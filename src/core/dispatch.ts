@@ -8,12 +8,14 @@ import {
   buildPendingHistoryContextFromMap,
   clearHistoryEntries,
   recordPendingHistoryEntry,
-  resolveInboundRouteEnvelopeBuilderWithRuntime
+  resolveInboundRouteEnvelopeBuilderWithRuntime,
+  type OpenClawConfig,
+  type PluginRuntime,
 } from "openclaw/plugin-sdk";
 import type {
   DispatchMessageMedia,
   DispatchMessageParams,
-  OpenClawMessage, QQAllowConfig, QQConfig, QQGroupConfig,
+  OpenClawMessage, QQAllowConfig, QQConfig, QQGroupConfig, QQLoginInfo,
 } from '../types';
 import {
   getRuntime,
@@ -28,6 +30,7 @@ import { getFile, sendMsg, setInputStatus } from './request.js'
 import { napCatToOpenClawMessage, openClawToNapCatMessage } from '../adapters/message.js';
 import { Logger as log, markdownToText, buildMediaMessage } from '../utils/index.js';
 import { CHANNEL_ID } from "./config.js";
+import { handleQQCommands, shouldProcessCommands } from "./commands.js";
 
 /**
  * Convert OpenClaw message content array to plain text
@@ -166,10 +169,34 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
 
   const isGroup = chatType === 'group';
   const config = context.account;
+  const loginInfo = getLoginInfo();
+
+  // Command Processing
+  const commandResult = await commandHandler({
+    content,
+    isGroup,
+    chatId,
+    senderId,
+    senderName,
+    timestamp,
+    cfg: context.cfg,
+    accountId: context.accountId,
+    runtime,
+    loginInfo,
+  });
+
+  if (!commandResult.shouldContinue) {
+    return; // Command handled completely, skip normal processing
+  }
+
+  // Update content if command returned modified content (e.g., /new 你好 -> 你好)
+  if (commandResult.content !== undefined) {
+    content = commandResult.content;
+  }
 
   // At 模式处理
   if (isGroup) {
-    const isMention = mention(content, chatId, targetId);
+    const isMention = mention(content, chatId, targetId, loginInfo);
     if (!isMention) {
       log.debug('dispatch', `Skipping group message (not mentioned)`);
       const groupConfig = getGroupConfig(chatId, config);
@@ -502,14 +529,13 @@ function allowJudgment(config: QQAllowConfig, userId: string): boolean {
   return false;
 }
 
-function mention(content: string, groupId: string, targetId?: string): boolean {
+function mention(content: string, groupId: string, targetId?: string, loginInfo?: QQLoginInfo): boolean {
   const context = getContext();
   if (!context) {
     log.warn('dispatch', `No gateway context`);
     return false;
   }
   let config = getGroupConfig(groupId, context.account)
-  const loginInfo = getLoginInfo();
 
   const isMentionEnabled = !!config?.requireMention;
   const isPokeEnabled = !!config?.requirePoke;
@@ -533,4 +559,97 @@ function mention(content: string, groupId: string, targetId?: string): boolean {
   log.debug('dispatch', `Require mention: ${requireMention}, require poke: ${requirePoke}, require wake: ${requireWake}`);
 
   return requireMention || requirePoke || requireWake;
+}
+
+/**
+ * Handle command processing for incoming messages
+ * @returns Object with shouldContinue flag and optional modified content
+ */
+async function commandHandler(params: {
+  content: string;
+  isGroup: boolean;
+  chatId: string;
+  senderId: string;
+  senderName?: string;
+  timestamp: number;
+  cfg: OpenClawConfig;
+  accountId: string;
+  runtime: PluginRuntime;
+  loginInfo: QQLoginInfo;
+}): Promise<{ shouldContinue: boolean; content?: string }> {
+  const { content, isGroup, chatId, senderId, senderName, timestamp, cfg, accountId, runtime, loginInfo } = params;
+
+  // Check if commands should be processed
+  // - Direct messages: commands work directly
+  // - Group messages: commands require @mention
+  let shouldCheckCommand = false;
+  let commandContent = content;
+
+  if (shouldProcessCommands(content)) {
+    if (!isGroup) {
+      // Direct message: process commands directly
+      shouldCheckCommand = true;
+    } else {
+      // Group message: check if bot is mentioned (ignore @全体成员)
+      const isMentioned = !!loginInfo?.userId && content.includes(`[提及]@${loginInfo.userId}`);
+
+      if (isMentioned) {
+        shouldCheckCommand = true;
+        // Remove @mention from content to extract pure command
+        // e.g., "[提及]@123456 /new" -> "/new"
+        commandContent = content.replace(/\[提及]@\S+\s*/, '').trim();
+      }
+    }
+  }
+
+  if (shouldCheckCommand) {
+    // Resolve route to get sessionKey and storePath
+    const { route, buildEnvelope } = resolveInboundRouteEnvelopeBuilderWithRuntime({
+      cfg,
+      channel: CHANNEL_ID,
+      accountId,
+      peer: {
+        kind: isGroup ? ("group" as const) : ("direct" as const),
+        id: chatId,
+      },
+      runtime: runtime.channel,
+      sessionStore: cfg.session?.store
+    });
+
+    // Build envelope to get storePath (required for session file deletion)
+    const commandFromLabel = isGroup ? `group:${chatId}` : senderName || `user:${senderId}`;
+    const { storePath: commandStorePath } = buildEnvelope({
+      channel: CHANNEL_ID,
+      from: commandFromLabel,
+      body: commandContent,
+      timestamp,
+    });
+
+    const commandResult = await handleQQCommands({
+      content: commandContent,
+      sessionKey: route.sessionKey,
+      storePath: commandStorePath || cfg.session?.store || "",
+      senderId,
+      senderName,
+      cfg,
+    });
+
+    if (commandResult.handled) {
+      if (commandResult.reply) {
+        await sendText(isGroup, chatId, commandResult.reply);
+      }
+
+      if (commandResult.tailText) {
+        // There's text after command, continue processing with it
+        return { shouldContinue: true, content: commandResult.tailText };
+      } else {
+        // Command fully handled, no need to continue
+        log.info("dispatch", "Command handled, skipping normal processing");
+        return { shouldContinue: false };
+      }
+    }
+  }
+
+  // No command handled, continue with original content
+  return { shouldContinue: true, content };
 }

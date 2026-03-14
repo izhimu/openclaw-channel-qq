@@ -444,3 +444,19 @@ export type QQLoginInfo = {
   userId: string;
   nickname: string;
 }
+
+// =============================================================================
+// Command Types
+// =============================================================================
+
+export type ParsedCommand = {
+  name: string;
+  args: string | undefined;
+};
+
+export type CommandResult = {
+  handled: boolean;
+  shouldContinue: boolean;
+  reply?: string;
+  tailText?: string; // If there's text after command, continue processing
+};
