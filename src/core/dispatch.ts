@@ -9,8 +9,6 @@ import {
   clearHistoryEntries,
   recordPendingHistoryEntry,
   resolveInboundRouteEnvelopeBuilderWithRuntime,
-  type OpenClawConfig,
-  type PluginRuntime,
 } from "openclaw/plugin-sdk";
 import type {
   DispatchMessageMedia,
@@ -30,7 +28,7 @@ import { getFile, sendMsg, setInputStatus } from './request.js'
 import { napCatToOpenClawMessage, openClawToNapCatMessage } from '../adapters/message.js';
 import { Logger as log, markdownToText, buildMediaMessage } from '../utils/index.js';
 import { CHANNEL_ID } from "./config.js";
-import { handleQQCommands, shouldProcessCommands } from "./commands.js";
+import { isAllowedQQCommand, shouldProcessCommands } from "./commands.js";
 
 /**
  * Convert OpenClaw message content array to plain text
@@ -172,30 +170,23 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
   const loginInfo = getLoginInfo();
 
   // Command Processing
+  // Commands are handled by OpenClaw's native system through the reply flow
+  // Group commands do NOT require @mention (per spec requirement)
   const commandResult = await commandHandler({
     content,
     isGroup,
     chatId,
-    senderId,
-    senderName,
-    timestamp,
-    cfg: context.cfg,
-    accountId: context.accountId,
-    runtime,
     loginInfo,
   });
 
-  if (!commandResult.shouldContinue) {
-    return; // Command handled completely, skip normal processing
-  }
-
-  // Update content if command returned modified content (e.g., /new 你好 -> 你好)
+  // Update content if command handler modified it
   if (commandResult.content !== undefined) {
     content = commandResult.content;
   }
 
-  // At 模式处理
-  if (isGroup) {
+  // For non-command group messages, check @mention requirement
+  // Command messages bypass the @mention check (per spec)
+  if (isGroup && !commandResult.isCommand) {
     const isMention = mention(content, chatId, targetId, loginInfo);
     if (!isMention) {
       log.debug('dispatch', `Skipping group message (not mentioned)`);
@@ -277,6 +268,8 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
     MediaUrl: media?.url,
     OriginatingChannel: CHANNEL_ID,
     OriginatingTo: toAddress,
+    CommandAuthorized: commandResult.isCommand,
+    OwnerAllowFrom: ["*"],
   });
 
   log.info('dispatch', `Dispatching to agent ${route.agentId}, session: ${route.sessionKey}`);
@@ -563,93 +556,41 @@ function mention(content: string, groupId: string, targetId?: string, loginInfo?
 
 /**
  * Handle command processing for incoming messages
+ *
+ * Commands are filtered through a whitelist and processed by OpenClaw's native
+ * command system through the reply flow (when CommandAuthorized is set).
+ *
+ * Key behaviors:
+ * - Commands in whitelist: pass through to native system (no @mention required per spec)
+ * - Commands NOT in whitelist: treated as regular text
+ * - Non-command messages: continue to normal AI processing
+ *
  * @returns Object with shouldContinue flag and optional modified content
  */
 async function commandHandler(params: {
   content: string;
   isGroup: boolean;
   chatId: string;
-  senderId: string;
-  senderName?: string;
-  timestamp: number;
-  cfg: OpenClawConfig;
-  accountId: string;
-  runtime: PluginRuntime;
   loginInfo: QQLoginInfo;
-}): Promise<{ shouldContinue: boolean; content?: string }> {
-  const { content, isGroup, chatId, senderId, senderName, timestamp, cfg, accountId, runtime, loginInfo } = params;
+}): Promise<{ shouldContinue: boolean; content?: string; isCommand: boolean }> {
+  const { content } = params;
 
-  // Check if commands should be processed
-  // - Direct messages: commands work directly
-  // - Group messages: commands require @mention
-  let shouldCheckCommand = false;
-  let commandContent = content;
-
-  if (shouldProcessCommands(content)) {
-    if (!isGroup) {
-      // Direct message: process commands directly
-      shouldCheckCommand = true;
-    } else {
-      // Group message: check if bot is mentioned (ignore @全体成员)
-      const isMentioned = !!loginInfo?.userId && content.includes(`[提及]@${loginInfo.userId}`);
-
-      if (isMentioned) {
-        shouldCheckCommand = true;
-        // Remove @mention from content to extract pure command
-        // e.g., "[提及]@123456 /new" -> "/new"
-        commandContent = content.replace(/\[提及]@\S+\s*/, '').trim();
-      }
-    }
+  // Check if this is a command message
+  if (!shouldProcessCommands(content)) {
+    return { shouldContinue: true, content, isCommand: false };
   }
 
-  if (shouldCheckCommand) {
-    // Resolve route to get sessionKey and storePath
-    const { route, buildEnvelope } = resolveInboundRouteEnvelopeBuilderWithRuntime({
-      cfg,
-      channel: CHANNEL_ID,
-      accountId,
-      peer: {
-        kind: isGroup ? ("group" as const) : ("direct" as const),
-        id: chatId,
-      },
-      runtime: runtime.channel,
-      sessionStore: cfg.session?.store
-    });
-
-    // Build envelope to get storePath (required for session file deletion)
-    const commandFromLabel = isGroup ? `group:${chatId}` : senderName || `user:${senderId}`;
-    const { storePath: commandStorePath } = buildEnvelope({
-      channel: CHANNEL_ID,
-      from: commandFromLabel,
-      body: commandContent,
-      timestamp,
-    });
-
-    const commandResult = await handleQQCommands({
-      content: commandContent,
-      sessionKey: route.sessionKey,
-      storePath: commandStorePath || cfg.session?.store || "",
-      senderId,
-      senderName,
-      cfg,
-    });
-
-    if (commandResult.handled) {
-      if (commandResult.reply) {
-        await sendText(isGroup, chatId, commandResult.reply);
-      }
-
-      if (commandResult.tailText) {
-        // There's text after command, continue processing with it
-        return { shouldContinue: true, content: commandResult.tailText };
-      } else {
-        // Command fully handled, no need to continue
-        log.info("dispatch", "Command handled, skipping normal processing");
-        return { shouldContinue: false };
-      }
-    }
+  // Check whitelist - only allowed commands should be processed
+  if (!isAllowedQQCommand(content)) {
+    // Command not in whitelist - treat as regular text
+    // The native system won't recognize it as a command
+    log.info("dispatch", `Command not in whitelist, treating as regular text`);
+    return { shouldContinue: true, content, isCommand: false };
   }
 
-  // No command handled, continue with original content
-  return { shouldContinue: true, content };
+  // Command is in whitelist
+  // Let it pass through to the native reply flow which will handle it
+  // The native system will process the command and handle session reset etc.
+  log.info("dispatch", `Whitelisted command detected, will be processed by native system`);
+  return { shouldContinue: true, content, isCommand: true };
 }
