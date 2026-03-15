@@ -181,27 +181,11 @@ openclaw gateway restart
 
 ## 使用方法
 
-### 发送消息
-
-```bash
-# 发送私聊消息
-openclaw message send "你好！" --to qq:private:123456789
-
-# 发送群消息
-openclaw message send "大家好！" --to qq:group:123456
-
-# 带回复的消息
-openclaw message send "回复你的消息" --to qq:private:123456789 --reply-to <message-id>
-```
-
 ### 检查状态
 
 ```bash
 # 查看频道状态
 openclaw channels
-
-# 查看日志
-openclaw logs --channel qq
 ```
 
 ### 消息目标格式
@@ -392,6 +376,11 @@ npm run build
 ---
 
 ## 更新日志
+
+### [0.5.1] - 2026-03-12
+
+#### 修复
+- **连接状态显示**：修复了插件面板中连接状态及错误信息显示不准确的问题。
 
 ### [0.5.0] - 2026-03-11
 
