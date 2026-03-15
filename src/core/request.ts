@@ -10,12 +10,13 @@ import type {
   SendMsgResp,
   SetInputStatusReq,
   GetFriendListResp,
-  GetGroupListResp
+  GetGroupListResp,
+  NapCatEvent
 } from "../types";
 import pLimit from 'p-limit';
 import { Logger as log } from "../utils/index.js"
-import { setContextStatus, getContext, getConnection } from "./runtime.js"
-import { handleGroupMessage, handlePrivateMessage, handlePokeEvent } from "./dispatch.js";
+import { getContext, getConnection, getRuntime } from "./runtime.js"
+import { createQQEventHandler } from "./event-handler.js";
 import { failResp } from "./connection.js"
 
 /**
@@ -26,15 +27,21 @@ const sendMsgLimiter = pLimit(1);
 
 /**
  * 事件监听
+ * 使用统一的事件处理器处理所有事件
  * @param event
  */
-export async function eventListener(event: any): Promise<void> {
+export async function eventListener(event: NapCatEvent): Promise<void> {
   log.debug("request", `Received event: ${event.post_type}`);
 
   const context = getContext();
-
   if (!context) {
     log.warn("request", `No gateway context`);
+    return;
+  }
+
+  const runtime = getRuntime();
+  if (!runtime) {
+    log.warn("request", `No runtime available`);
     return;
   }
 
@@ -44,61 +51,15 @@ export async function eventListener(event: any): Promise<void> {
     return;
   }
 
-  switch (event.post_type) {
-    case "message":
-      // 过滤空消息
-      if (!event.raw_message || event.raw_message === '') {
-        log.debug("request", `Ignored empty message`);
-        break;
-      }
+  // 使用统一的事件处理器
+  const handler = createQQEventHandler({
+    runtime,
+    cfg: context.cfg,
+    accountId: context.accountId,
+    connection,
+  });
 
-      setContextStatus({
-        lastInboundAt: Date.now(),
-      })
-      if (event.message_type === "group" && event.group_id) {
-        await handleGroupMessage({
-          time: event.time,
-          self_id: event.self_id,
-          message_id: event.message_id ?? 0,
-          group_id: event.group_id,
-          user_id: event.user_id,
-          message: event.message ?? [],
-          raw_message: event.raw_message ?? '',
-          sender: event.sender,
-        });
-      } else if (event.message_type === "private") {
-        await handlePrivateMessage({
-          time: event.time,
-          self_id: event.self_id,
-          message_id: event.message_id ?? 0,
-          user_id: event.user_id,
-          message: event.message ?? [],
-          raw_message: event.raw_message ?? '',
-          sender: event.sender,
-        });
-      }
-      break;
-
-    case "notice":
-      if (event.target_id) {
-        const isPokeEvent =
-          event.notice_type === "poke" ||
-          (event.notice_type === "notify" && event.sub_type === "poke");
-
-        if (isPokeEvent) {
-          await handlePokeEvent({
-            user_id: event.user_id,
-            target_id: event.target_id,
-            group_id: event.group_id,
-            raw_info: event.raw_info,
-          });
-        }
-      }
-      break;
-
-    default:
-      log.debug("request", `Unhandled event type: ${event.post_type}`);
-  }
+  await handler(event);
 }
 
 /**

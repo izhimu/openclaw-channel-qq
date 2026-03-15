@@ -12,9 +12,8 @@ import {
   resolveInboundRouteEnvelopeBuilderWithRuntime,
 } from "openclaw/plugin-sdk";
 import type {
-  DispatchMessageMedia,
-  DispatchMessageParams,
   OpenClawMessage, QQConfig, QQGroupConfig, QQLoginInfo,
+  QQEventContext,
 } from '../types';
 import {
   getRuntime,
@@ -25,93 +24,15 @@ import {
   getLoginInfo,
   historyCache
 } from './runtime.js'
-import { getFile, sendMsg, setInputStatus } from './request.js'
-import { napCatToOpenClawMessage, openClawToNapCatMessage } from '../adapters/message.js';
+import { sendMsg, setInputStatus } from './request.js'
+import { openClawToNapCatMessage } from '../adapters/message.js';
 import { Logger as log, markdownToText, buildMediaMessage } from '../utils/index.js';
 import { CHANNEL_ID } from "./config.js";
 import { isAllowedQQCommand, shouldProcessCommands } from "./commands.js";
-import {
-  resolveQQCommandAuthorization,
-  getQQConfigByChatType,
-  type QQCommandAuthorization,
-} from "./auth.js";
 
-/**
- * Convert OpenClaw message content array to plain text
- * For images, includes the URL so AI models can access them
- * For replies, includes quoted message content if available
- */
-async function contentToPlainText(content: OpenClawMessage[]): Promise<string> {
-  const results = await Promise.all(
-    content.map(async (c) => {
-      switch (c.type) {
-        case 'text':
-          return c.text;
-        case 'at':
-          const target = c.isAll ? '@全体成员' : `@${c.userId}`;
-          return `[提及]${target}`;
-        case 'image':
-          return `[图片]${c.url}`;
-        case 'audio':
-          return `[音频]${c.path}`;
-        case 'video':
-          return `[视频]${c.url}`;
-        case 'file': {
-          const fileInfo = await getFile({ file_id: c.fileId });
-          if (!fileInfo.data?.file) return null;
-          return `[文件]${fileInfo.data.file}`;
-        }
-        case 'json':
-          return `[JSON]\n\n\`\`\`json\n${c.data}\n\`\`\``;
-        case 'reply': {
-          const senderInfo = c.sender && c.senderId ? `${c.sender}(${c.senderId})` : '(未知用户)';
-          const replyMsg = c.message ?? '(无法获取原消息)';
-          const quotedContent = `${senderInfo}:\n${replyMsg}`.replace(/^/gm, '> ');
-          return `[回复]\n\n${quotedContent}`;
-        }
-        default:
-          return null;
-      }
-    })
-  );
-  return results.filter((v): v is string => v !== null).join('\n');
-}
-
-async function contextToMedia(content: OpenClawMessage[]): Promise<DispatchMessageMedia | undefined> {
-  const hasMedia = content.some(c => c.type === 'image' || c.type === 'audio' || c.type === 'file');
-  if (!hasMedia) {
-    return;
-  }
-  const image = content.find(c => c.type === 'image');
-  if (image) {
-    return {
-      type: 'image/jpeg',
-      path: image.url,
-      url: image.url,
-    };
-  }
-  const audio = content.find(c => c.type === 'audio');
-  if (audio) {
-    return {
-      type: 'audio/amr',
-      path: audio.path,
-      url: audio.url,
-    };
-  }
-  const file = content.find(c => c.type === 'file');
-  if (file) {
-    const fileInfo = await getFile({ file_id: file.fileId });
-    if (fileInfo.data?.file == undefined) {
-      return;
-    }
-    return {
-      type: 'application/octet-stream',
-      path: fileInfo.data?.file,
-      url: fileInfo.data?.url,
-    };
-  }
-  return;
-}
+// =============================================================================
+// Helper Functions
+// =============================================================================
 
 async function sendText(isGroup: boolean, chatId: string, text: string): Promise<void> {
   const contextText = text.replace(/NO_REPLY\s*$/, '');
@@ -154,11 +75,113 @@ async function sendMedia(isGroup: boolean, chatId: string, mediaUrl: string): Pr
   }
 }
 
+function getGroupConfig(groupId: string, config: QQConfig): QQGroupConfig {
+  log.debug('dispatch', `All Custom config: ${JSON.stringify(config.messageGroupsCustom)}`)
+  let groupConfig = config.messageGroupsCustom[groupId];
+  if (!groupConfig) {
+    groupConfig = config.messageGroup
+    log.debug('dispatch', `Use global config: ${JSON.stringify(groupConfig)}`)
+  } else {
+    groupConfig = {
+      ...config.messageGroup,
+      ...groupConfig,
+    }
+  }
+  log.debug('dispatch', `Final config: ${JSON.stringify(groupConfig)}`)
+  return groupConfig
+}
+
+function mention(content: string, groupId: string, targetId?: string, loginInfo?: QQLoginInfo): boolean {
+  const context = getContext();
+  if (!context) {
+    log.warn('dispatch', 'No gateway context');
+    return false;
+  }
+  let config = getGroupConfig(groupId, context.account)
+
+  const isMentionEnabled = !!config?.requireMention;
+  const isPokeEnabled = !!config?.requirePoke;
+  const isWakeEnabled = !!config?.wakeWord?.trim();
+
+  if (!isMentionEnabled && !isPokeEnabled && !isWakeEnabled) {
+    log.debug('dispatch', 'All requires are disabled, returning true by default.');
+    return true;
+  }
+
+  const requireMention = isMentionEnabled &&
+    (content.includes('[提及]@全体成员') ||
+      (!!loginInfo?.userId && content.includes(`[提及]@${loginInfo.userId}`)));
+
+  const requirePoke = isPokeEnabled &&
+    (content.includes('[动作]') && targetId === loginInfo?.userId);
+
+  const requireWake = isWakeEnabled &&
+    content.includes(config.wakeWord ?? "");
+
+  log.debug('dispatch', `Require mention: ${requireMention}, require poke: ${requirePoke}, require wake: ${requireWake}`);
+
+  return requireMention || requirePoke || requireWake;
+}
+
+/**
+ * Handle command processing for incoming messages
+ *
+ * Commands are filtered through a whitelist and processed by OpenClaw's native
+ * command system through the reply flow (when CommandAuthorized is set).
+ *
+ * Key behaviors:
+ * - Commands in whitelist: pass through to native system (no @mention required per spec)
+ * - Commands NOT in whitelist: treated as regular text
+ * - Non-command messages: continue to normal AI processing
+ *
+ * @returns Object with shouldContinue flag and optional modified content
+ */
+async function commandHandler(params: {
+  content: string;
+  isGroup: boolean;
+  chatId: string;
+  loginInfo: QQLoginInfo;
+}): Promise<{ shouldContinue: boolean; content?: string; isCommand: boolean }> {
+  const { content } = params;
+
+  // Check if this is a command message
+  if (!shouldProcessCommands(content)) {
+    return { shouldContinue: true, content, isCommand: false };
+  }
+
+  // Check whitelist - only allowed commands should be processed
+  if (!isAllowedQQCommand(content)) {
+    // Command not in whitelist - treat as regular text
+    // The native system won't recognize it as a command
+    log.info("dispatch", `Command not in whitelist, treating as regular text`);
+    return { shouldContinue: true, content, isCommand: false };
+  }
+
+  // Command is in whitelist
+  // Let it pass through to the native reply flow which will handle it
+  // The native system will process the command and handle session reset etc.
+  log.info("dispatch", `Whitelisted command detected, will be processed by native system`);
+  return { shouldContinue: true, content, isCommand: true };
+}
+
+// =============================================================================
+// Main Dispatch Function
+// =============================================================================
+
 /**
  * Dispatch an incoming message to the AI for processing
+ *
+ * This function accepts a QQEventContext which contains all necessary
+ * information about the event (message, poke, etc.)
  */
-export async function dispatchMessage(params: DispatchMessageParams): Promise<void> {
-  let { chatType, chatId, senderId, senderName, messageId, content, media, timestamp, targetId } = params;
+export async function dispatchMessage(ctx: QQEventContext): Promise<void> {
+  let { content, chatType, chatId, senderId, senderName, messageId, media, timestamp, targetId } = ctx;
+
+  // Ensure content is defined
+  if (!content) {
+    log.warn('dispatch', 'No content in event context');
+    return;
+  }
 
   const runtime = getRuntime();
   if (!runtime) {
@@ -205,7 +228,7 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
           sender: `${senderName}(${senderId})`,
           body: content,
           timestamp: timestamp,
-          messageId: messageId,
+          messageId: messageId || '',
         },
       })
       return;
@@ -365,289 +388,4 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
     }
     clearSession(route.sessionKey);
   }
-}
-
-/**
- * Handle group message event
- */
-export async function handleGroupMessage(
-  event: {
-    time: number;
-    self_id: number;
-    message_id: number;
-    group_id: number;
-    user_id: number;
-    message: Array<{ type: string; data: Record<string, unknown> }>;
-    raw_message: string;
-    sender?: {
-      nickname?: string;
-      card?: string;
-    };
-  }
-): Promise<void> {
-  const senderId = event.user_id.toString();
-  const groupId = event.group_id.toString();
-
-  // 使用新的统一授权系统
-  const auth = checkAuthorization({
-    senderId,
-    isGroup: true,
-    groupId,
-  });
-
-  if (!auth.isAuthorizedSender) {
-    log.info('dispatch', `Ignoring group message from ${senderId}: ${auth.denialReason}`)
-    return;
-  }
-
-  const content = await napCatToOpenClawMessage(event.message);
-
-  const plainText = await contentToPlainText(content);
-  const media = await contextToMedia(content);
-
-  log.info('dispatch', `Group message from ${event.sender?.nickname || event.sender?.card || event.user_id}: ${plainText}, media: ${media != undefined}`);
-
-  await dispatchMessage({
-    chatType: 'group',
-    chatId: String(event.group_id),
-    senderId: String(event.user_id),
-    senderName: event.sender?.nickname || event.sender?.card,
-    messageId: String(event.message_id),
-    content: plainText,
-    media,
-    timestamp: event.time * 1000,
-  });
-}
-
-/**
- * Handle private message event
- */
-export async function handlePrivateMessage(
-  event: {
-    time: number;
-    self_id: number;
-    message_id: number;
-    user_id: number;
-    message: Array<{ type: string; data: Record<string, unknown> }>;
-    raw_message: string;
-    sender?: {
-      nickname?: string;
-    };
-  }
-): Promise<void> {
-  const senderId = event.user_id.toString();
-
-  // 使用新的统一授权系统
-  const auth = checkAuthorization({
-    senderId,
-    isGroup: false,
-  });
-
-  if (!auth.isAuthorizedSender) {
-    log.info('dispatch', `Ignoring private message from ${senderId}: ${auth.denialReason}`)
-    return;
-  }
-
-  const content = await napCatToOpenClawMessage(event.message);
-
-  const plainText = await contentToPlainText(content);
-  const media = await contextToMedia(content);
-
-  log.info('dispatch', `Private message from ${event.sender?.nickname || event.user_id}: ${plainText}, media: ${media != undefined}`);
-
-  await dispatchMessage({
-    chatType: 'direct',
-    chatId: String(event.user_id),
-    senderId: String(event.user_id),
-    senderName: event.sender?.nickname,
-    messageId: String(event.message_id),
-    content: plainText,
-    media,
-    timestamp: event.time * 1000,
-  });
-}
-
-/**
- * Handle poke event
- */
-function extractPokeActionText(rawInfo?: Array<{ type: string; txt?: string }>): string {
-  if (!rawInfo) return '戳了戳';
-  const actionItem = rawInfo.find(item => item.type === 'nor' && item.txt);
-  return actionItem?.txt || '戳了戳';
-}
-
-export async function handlePokeEvent(
-  event: {
-    user_id: number;
-    target_id: number;
-    group_id?: number;
-    raw_info?: Array<{ type: string; txt?: string }>;
-  }
-): Promise<void> {
-  const senderId = event.user_id.toString();
-  const isGroup = !!event.group_id;
-
-  // 使用新的统一授权系统
-  const auth = checkAuthorization({
-    senderId,
-    isGroup,
-    groupId: event.group_id?.toString(),
-  });
-
-  if (!auth.isAuthorizedSender) {
-    log.info('dispatch', `Poke from ${senderId} is not allowed: ${auth.denialReason}`)
-    return;
-  }
-
-  const actionText = extractPokeActionText(event.raw_info);
-  log.info('dispatch', `Poke from ${event.user_id}: ${actionText}`);
-
-  const pokeMessage = actionText || '戳了戳';
-  const chatType = event.group_id ? 'group' : 'direct';
-  const chatId = String(event.group_id || event.user_id);
-
-  await dispatchMessage({
-    chatType,
-    chatId,
-    senderId: String(event.user_id),
-    senderName: String(event.user_id),
-    messageId: `poke_${event.user_id}_${Date.now()}`,
-    content: `[动作]${pokeMessage}`,
-    timestamp: Date.now(),
-    targetId: String(event.target_id),
-  });
-}
-
-function getGroupConfig(groupId: string, config: QQConfig): QQGroupConfig {
-  log.debug('dispatch', `All Custom config: ${JSON.stringify(config.messageGroupsCustom)}`)
-  let groupConfig = config.messageGroupsCustom[groupId];
-  if (!groupConfig) {
-    groupConfig = config.messageGroup
-    log.debug('dispatch', `Use global config: ${JSON.stringify(groupConfig)}`)
-  } else {
-    groupConfig = {
-      ...config.messageGroup,
-      ...groupConfig,
-    }
-  }
-  log.debug('dispatch', `Final config: ${JSON.stringify(groupConfig)}`)
-  return groupConfig
-}
-
-/**
- * 使用新的统一授权系统进行授权检查
- *
- * @returns 授权结果，包含 isAuthorizedSender 和其他信息
- */
-function checkAuthorization(params: {
-  senderId: string;
-  isGroup: boolean;
-  groupId?: string;
-}): QQCommandAuthorization {
-  const context = getContext();
-  if (!context) {
-    log.warn('dispatch', `No gateway context`);
-    return {
-      providerId: "qq",
-      ownerList: [],
-      senderId: params.senderId,
-      senderIsOwner: false,
-      isAuthorizedSender: false,
-      denialReason: "default_deny",
-    };
-  }
-
-  const qqConfig = getQQConfigByChatType(
-    params.isGroup,
-    params.groupId,
-    context.account
-  );
-
-  const fromLabel = params.isGroup
-    ? `qq:group:${params.groupId}`
-    : `qq:user:${params.senderId}`;
-  const toLabel = params.isGroup
-    ? `qq:group:${params.groupId}`
-    : `qq:user:${params.senderId}`;
-
-  return resolveQQCommandAuthorization({
-    senderId: params.senderId,
-    from: fromLabel,
-    to: toLabel,
-    cfg: context.cfg,
-    qqConfig,
-  });
-}
-
-function mention(content: string, groupId: string, targetId?: string, loginInfo?: QQLoginInfo): boolean {
-  const context = getContext();
-  if (!context) {
-    log.warn('dispatch', `No gateway context`);
-    return false;
-  }
-  let config = getGroupConfig(groupId, context.account)
-
-  const isMentionEnabled = !!config?.requireMention;
-  const isPokeEnabled = !!config?.requirePoke;
-  const isWakeEnabled = !!config?.wakeWord?.trim();
-
-  if (!isMentionEnabled && !isPokeEnabled && !isWakeEnabled) {
-    log.debug('dispatch', 'All requires are disabled, returning true by default.');
-    return true;
-  }
-
-  const requireMention = isMentionEnabled &&
-    (content.includes('[提及]@全体成员') ||
-      (!!loginInfo?.userId && content.includes(`[提及]@${loginInfo.userId}`)));
-
-  const requirePoke = isPokeEnabled &&
-    (content.includes('[动作]') && targetId === loginInfo?.userId);
-
-  const requireWake = isWakeEnabled &&
-    content.includes(config.wakeWord ?? "");
-
-  log.debug('dispatch', `Require mention: ${requireMention}, require poke: ${requirePoke}, require wake: ${requireWake}`);
-
-  return requireMention || requirePoke || requireWake;
-}
-
-/**
- * Handle command processing for incoming messages
- *
- * Commands are filtered through a whitelist and processed by OpenClaw's native
- * command system through the reply flow (when CommandAuthorized is set).
- *
- * Key behaviors:
- * - Commands in whitelist: pass through to native system (no @mention required per spec)
- * - Commands NOT in whitelist: treated as regular text
- * - Non-command messages: continue to normal AI processing
- *
- * @returns Object with shouldContinue flag and optional modified content
- */
-async function commandHandler(params: {
-  content: string;
-  isGroup: boolean;
-  chatId: string;
-  loginInfo: QQLoginInfo;
-}): Promise<{ shouldContinue: boolean; content?: string; isCommand: boolean }> {
-  const { content } = params;
-
-  // Check if this is a command message
-  if (!shouldProcessCommands(content)) {
-    return { shouldContinue: true, content, isCommand: false };
-  }
-
-  // Check whitelist - only allowed commands should be processed
-  if (!isAllowedQQCommand(content)) {
-    // Command not in whitelist - treat as regular text
-    // The native system won't recognize it as a command
-    log.info("dispatch", `Command not in whitelist, treating as regular text`);
-    return { shouldContinue: true, content, isCommand: false };
-  }
-
-  // Command is in whitelist
-  // Let it pass through to the native reply flow which will handle it
-  // The native system will process the command and handle session reset etc.
-  log.info("dispatch", `Whitelisted command detected, will be processed by native system`);
-  return { shouldContinue: true, content, isCommand: true };
 }
