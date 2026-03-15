@@ -13,7 +13,7 @@ import {
 import type {
   DispatchMessageMedia,
   DispatchMessageParams,
-  OpenClawMessage, QQAllowConfig, QQConfig, QQGroupConfig, QQLoginInfo,
+  OpenClawMessage, QQConfig, QQGroupConfig, QQLoginInfo,
 } from '../types';
 import {
   getRuntime,
@@ -29,6 +29,11 @@ import { napCatToOpenClawMessage, openClawToNapCatMessage } from '../adapters/me
 import { Logger as log, markdownToText, buildMediaMessage } from '../utils/index.js';
 import { CHANNEL_ID } from "./config.js";
 import { isAllowedQQCommand, shouldProcessCommands } from "./commands.js";
+import {
+  resolveQQCommandAuthorization,
+  getQQConfigByChatType,
+  type QQCommandAuthorization,
+} from "./auth.js";
 
 /**
  * Convert OpenClaw message content array to plain text
@@ -374,10 +379,21 @@ export async function handleGroupMessage(
     };
   }
 ): Promise<void> {
-  if (!allow(event.user_id.toString(), event.group_id.toString())) {
-    log.debug('dispatch', `Ignoring group message from ${event.user_id}`)
+  const senderId = event.user_id.toString();
+  const groupId = event.group_id.toString();
+
+  // 使用新的统一授权系统
+  const auth = checkAuthorization({
+    senderId,
+    isGroup: true,
+    groupId,
+  });
+
+  if (!auth.isAuthorizedSender) {
+    log.info('dispatch', `Ignoring group message from ${senderId}: ${auth.denialReason}`)
     return;
   }
+
   const content = await napCatToOpenClawMessage(event.message);
 
   const plainText = await contentToPlainText(content);
@@ -413,10 +429,19 @@ export async function handlePrivateMessage(
     };
   }
 ): Promise<void> {
-  if (!allow(event.user_id.toString())) {
-    log.debug('dispatch', `Ignoring message from ${event.user_id}`)
+  const senderId = event.user_id.toString();
+
+  // 使用新的统一授权系统
+  const auth = checkAuthorization({
+    senderId,
+    isGroup: false,
+  });
+
+  if (!auth.isAuthorizedSender) {
+    log.info('dispatch', `Ignoring private message from ${senderId}: ${auth.denialReason}`)
     return;
   }
+
   const content = await napCatToOpenClawMessage(event.message);
 
   const plainText = await contentToPlainText(content);
@@ -453,10 +478,21 @@ export async function handlePokeEvent(
     raw_info?: Array<{ type: string; txt?: string }>;
   }
 ): Promise<void> {
-  if (!allow(event.user_id.toString(), event.group_id?.toString())) {
-    log.debug('dispatch', `Poke from ${event.user_id} is not allowed`)
+  const senderId = event.user_id.toString();
+  const isGroup = !!event.group_id;
+
+  // 使用新的统一授权系统
+  const auth = checkAuthorization({
+    senderId,
+    isGroup,
+    groupId: event.group_id?.toString(),
+  });
+
+  if (!auth.isAuthorizedSender) {
+    log.info('dispatch', `Poke from ${senderId} is not allowed: ${auth.denialReason}`)
     return;
   }
+
   const actionText = extractPokeActionText(event.raw_info);
   log.info('dispatch', `Poke from ${event.user_id}: ${actionText}`);
 
@@ -492,34 +528,49 @@ function getGroupConfig(groupId: string, config: QQConfig): QQGroupConfig {
   return groupConfig
 }
 
-function allow(userId: string, groupId?: string): boolean {
+/**
+ * 使用新的统一授权系统进行授权检查
+ *
+ * @returns 授权结果，包含 isAuthorizedSender 和其他信息
+ */
+function checkAuthorization(params: {
+  senderId: string;
+  isGroup: boolean;
+  groupId?: string;
+}): QQCommandAuthorization {
   const context = getContext();
   if (!context) {
     log.warn('dispatch', `No gateway context`);
-    return false;
+    return {
+      providerId: "qq",
+      ownerList: [],
+      senderId: params.senderId,
+      senderIsOwner: false,
+      isAuthorizedSender: false,
+      denialReason: "default_deny",
+    };
   }
-  let config: QQAllowConfig = groupId ? getGroupConfig(groupId, context.account) : context.account.messageDirect;
-  return allowJudgment(config, userId);
-}
 
-function allowJudgment(config: QQAllowConfig, userId: string): boolean {
-  if (config.denyFrom?.includes(userId)) {
-    log.debug('dispatch', `User ${userId} is denied`);
-    return false;
-  }
-  if (config.policy === 'allow') {
-    log.debug('dispatch', `User ${userId} is allowed`);
-    return true;
-  }
-  if (config.policy === 'deny') {
-    log.debug('dispatch', `User ${userId} is denied`);
-    return false
-  }
-  if (config.allowFrom?.includes(userId)) {
-    log.debug('dispatch', `User ${userId} is allowed`);
-    return true
-  }
-  return false;
+  const qqConfig = getQQConfigByChatType(
+    params.isGroup,
+    params.groupId,
+    context.account
+  );
+
+  const fromLabel = params.isGroup
+    ? `qq:group:${params.groupId}`
+    : `qq:user:${params.senderId}`;
+  const toLabel = params.isGroup
+    ? `qq:group:${params.groupId}`
+    : `qq:user:${params.senderId}`;
+
+  return resolveQQCommandAuthorization({
+    senderId: params.senderId,
+    from: fromLabel,
+    to: toLabel,
+    cfg: context.cfg,
+    qqConfig,
+  });
 }
 
 function mention(content: string, groupId: string, targetId?: string, loginInfo?: QQLoginInfo): boolean {
