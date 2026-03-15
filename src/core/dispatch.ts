@@ -7,6 +7,7 @@ import {
   type ReplyPayload,
   buildPendingHistoryContextFromMap,
   clearHistoryEntries,
+  createReplyPrefixOptions,
   recordPendingHistoryEntry,
   resolveInboundRouteEnvelopeBuilderWithRuntime,
 } from "openclaw/plugin-sdk";
@@ -288,7 +289,14 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
     },
   });
 
-  const messagesConfig = runtime.channel.reply.resolveEffectiveMessagesConfig(context.cfg, route.agentId);
+  // 使用原生回复前缀配置系统
+  const { onModelSelected, ...prefixOptions } = createReplyPrefixOptions({
+    cfg: context.cfg,
+    agentId: route.agentId,
+    channel: CHANNEL_ID,
+    accountId: context.accountId,
+  });
+
   try {
     session.abortController = new AbortController()
     updateSession(route.sessionKey, session)
@@ -296,10 +304,7 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
       ctx: ctxPayload,
       cfg: context.cfg,
       dispatcherOptions: {
-        humanDelay: {
-          mode: "off"
-        },
-        responsePrefix: messagesConfig.responsePrefix,
+        ...prefixOptions,
         onReplyStart: async (): Promise<void> => {
           if (!isGroup) {
             // 输入状态
@@ -343,6 +348,7 @@ export async function dispatchMessage(params: DispatchMessageParams): Promise<vo
       },
       replyOptions: {
         abortSignal: session.abortController?.signal,
+        onModelSelected,
       },
     });
 
