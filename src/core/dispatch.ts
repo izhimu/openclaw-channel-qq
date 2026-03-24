@@ -1,81 +1,36 @@
-/**
- * Message Dispatch Module
- * Handles routing and dispatching incoming messages to the AI
- */
-
-import {
-  type ReplyPayload,
-  buildPendingHistoryContextFromMap,
-  clearHistoryEntries,
-  createReplyPrefixOptions,
-  recordPendingHistoryEntry,
-  resolveInboundRouteEnvelopeBuilderWithRuntime,
-} from "openclaw/plugin-sdk";
+import type { OpenClawConfig, PluginRuntime } from "openclaw/plugin-sdk/core"
+import { createChannelInboundDebouncer, shouldDebounceTextInbound } from "openclaw/plugin-sdk/channel-inbound"
+import { createChannelReplyPipeline } from "openclaw/plugin-sdk/channel-reply-pipeline"
+import { resolveSendableOutboundReplyParts } from "openclaw/plugin-sdk/reply-payload"
+import { recordPendingHistoryEntry } from "openclaw/plugin-sdk/reply-history"
 import type {
-  OpenClawMessage, QQConfig, QQGroupConfig, QQLoginInfo,
-  QQEventContext,
+  OpenClawMessage, QQAccount, QQGroupConfig, QQLoginInfo,
+  ProcessInboundParams, InboundMessage
 } from '../types';
 import {
-  getRuntime,
-  getContext,
-  getSession,
-  clearSession,
-  updateSession,
   getLoginInfo,
   historyCache
 } from './runtime.js'
 import { sendMsg, setInputStatus } from './request.js'
-import { openClawToNapCatMessage } from '../adapters/message.js';
-import { Logger as log, markdownToText, buildMediaMessage } from '../utils/index.js';
-import { CHANNEL_ID } from "./config.js";
-import { isAllowedQQCommand, shouldProcessCommands } from "./commands.js";
+import { outboundMessageAdapter } from '../adapters/message.js';
+import { Logger as log, buildMediaMessage } from '../utils/index.js';
+import { QQ_CHANNEL } from "./config.js";
 
-// =============================================================================
-// Helper Functions
-// =============================================================================
-
-async function sendText(isGroup: boolean, chatId: string, text: string): Promise<void> {
-  const contextText = text.replace(/NO_REPLY\s*$/, '');
-  const context = getContext();
-  if (!context) {
-    log.warn('dispatch', `No gateway context`);
-    return;
-  }
-  const messageSegments = [{
-    type: 'text',
-    data: { text: context.account.markdownFormat ? markdownToText(contextText) : contextText }
-  }];
-
+async function send(account: QQAccount, isGroup: boolean, to: string, messageSegments: OpenClawMessage[]): Promise<void> {
   try {
     await sendMsg({
       message_type: isGroup ? 'group' : 'private',
-      group_id: isGroup ? chatId : undefined,
-      user_id: !isGroup ? chatId : undefined,
-      message: messageSegments,
-    })
-    log.info('dispatch', `Sent reply: ${text.slice(0, 100)}`);
-  } catch (error) {
-    log.error('dispatch', `Send failed: ${error}`);
-  }
-}
-
-async function sendMedia(isGroup: boolean, chatId: string, mediaUrl: string): Promise<void> {
-  const content: OpenClawMessage[] = [buildMediaMessage(mediaUrl)];
-
-  try {
-    await sendMsg({
-      message_type: isGroup ? 'group' : 'private',
-      group_id: isGroup ? chatId : undefined,
-      user_id: !isGroup ? chatId : undefined,
-      message: openClawToNapCatMessage(content),
+      group_id: isGroup ? to : undefined,
+      user_id: !isGroup ? to : undefined,
+      message: await outboundMessageAdapter(messageSegments, account),
     });
-    log.info('dispatch', `Sent reply: ${mediaUrl.slice(0, 100)}`);
+    log.debug('dispatch', `Sent reply success`);
   } catch (error) {
     log.error('dispatch', `Send failed: ${error}`);
   }
 }
 
-function getGroupConfig(groupId: string, config: QQConfig): QQGroupConfig {
+function getGroupConfig(groupId: string, config: QQAccount): QQGroupConfig {
   log.debug('dispatch', `All Custom config: ${JSON.stringify(config.messageGroupsCustom)}`)
   let groupConfig = config.messageGroupsCustom[groupId];
   if (!groupConfig) {
@@ -91,13 +46,8 @@ function getGroupConfig(groupId: string, config: QQConfig): QQGroupConfig {
   return groupConfig
 }
 
-function mention(content: string, groupId: string, targetId?: string, loginInfo?: QQLoginInfo): boolean {
-  const context = getContext();
-  if (!context) {
-    log.warn('dispatch', 'No gateway context');
-    return false;
-  }
-  let config = getGroupConfig(groupId, context.account)
+function mention(account: QQAccount, content: string, groupId: string, targetId?: string, loginInfo?: QQLoginInfo): boolean {
+  let config = getGroupConfig(groupId, account)
 
   const isMentionEnabled = !!config?.requireMention;
   const isPokeEnabled = !!config?.requirePoke;
@@ -124,268 +74,243 @@ function mention(content: string, groupId: string, targetId?: string, loginInfo?
 }
 
 /**
- * Handle command processing for incoming messages
- *
- * Commands are filtered through a whitelist and processed by OpenClaw's native
- * command system through the reply flow (when CommandAuthorized is set).
- *
- * Key behaviors:
- * - Commands in whitelist: pass through to native system (no @mention required per spec)
- * - Commands NOT in whitelist: treated as regular text
- * - Non-command messages: continue to normal AI processing
- *
- * @returns Object with shouldContinue flag and optional modified content
+ * 防抖器
+ * @param params
  */
-async function commandHandler(params: {
-  content: string;
-  isGroup: boolean;
-  chatId: string;
-  loginInfo: QQLoginInfo;
-}): Promise<{ shouldContinue: boolean; content?: string; isCommand: boolean }> {
-  const { content } = params;
+function createDebouncer(params: {
+  cfg: OpenClawConfig;
+  account: { accountId: string };
+  runtime: PluginRuntime;
+}) {
+  return createChannelInboundDebouncer<ProcessInboundParams>({
+    cfg: params.cfg,
+    channel: QQ_CHANNEL,
+    buildKey: (item) => {
+      const peerId = item.msg.isGroup
+        ? (item.msg.groupId ?? item.msg.senderId)
+        : item.msg.senderId;
+      return `qq:${item.account.accountId}:${peerId}`;
+    },
+    shouldDebounce: (item) =>
+      shouldDebounceTextInbound({
+        text: item.msg.text,
+        cfg: item.cfg,
+        hasMedia: item.msg.hasMedia,
+      }),
+    onFlush: async (items) => {
+      if (items.length === 0) return;
 
-  // Check if this is a command message
-  if (!shouldProcessCommands(content)) {
-    return { shouldContinue: true, content, isCommand: false };
-  }
+      const mergedText = items
+        .map((item) => item.msg.text)
+        .filter(Boolean)
+        .join("\n");
 
-  // Check whitelist - only allowed commands should be processed
-  if (!isAllowedQQCommand(content)) {
-    // Command not in whitelist - treat as regular text
-    // The native system won't recognize it as a command
-    log.info("dispatch", `Command not in whitelist, treating as regular text`);
-    return { shouldContinue: true, content, isCommand: false };
-  }
+      const first = items[0];
+      const mergedMsg = {
+        ...first.msg,
+        text: mergedText,
+      };
 
-  // Command is in whitelist
-  // Let it pass through to the native reply flow which will handle it
-  // The native system will process the command and handle session reset etc.
-  log.info("dispatch", `Whitelisted command detected, will be processed by native system`);
-  return { shouldContinue: true, content, isCommand: true };
+      await processInboundMessage({
+        ...first,
+        msg: mergedMsg,
+      });
+    },
+    onError: (err, items) => {
+      log.error('dispatch', `debounce flush failed for ${items.length} items:`, err);
+    },
+  });
 }
 
-// =============================================================================
-// Main Dispatch Function
-// =============================================================================
-
 /**
- * Dispatch an incoming message to the AI for processing
- *
- * This function accepts a QQEventContext which contains all necessary
- * information about the event (message, poke, etc.)
+ * 入站消息解析
+ * @param params
  */
-export async function dispatchMessage(ctx: QQEventContext): Promise<void> {
-  let { content, chatType, chatId, senderId, senderName, messageId, media, timestamp, targetId } = ctx;
+async function processInboundMessage(params: ProcessInboundParams): Promise<void> {
+  const { cfg, account, runtime, msg } = params;
 
-  // Ensure content is defined
-  if (!content) {
-    log.warn('dispatch', 'No content in event context');
-    return;
-  }
-
-  const runtime = getRuntime();
-  if (!runtime) {
-    log.warn('dispatch', `Plugin runtime not available`);
-    return;
-  }
-  const context = getContext();
-  if (!context) {
-    log.warn('dispatch', `No gateway context`);
-    return;
-  }
-
-  const isGroup = chatType === 'group';
-  const config = context.account;
+  const isGroup = msg.isGroup;
   const loginInfo = getLoginInfo();
+  const peerId = isGroup ? (msg.groupId ?? msg.senderId) : msg.senderId
 
-  // Command Processing
-  // Commands are handled by OpenClaw's native system through the reply flow
-  // Group commands do NOT require @mention (per spec requirement)
-  const commandResult = await commandHandler({
-    content,
-    isGroup,
-    chatId,
-    loginInfo,
-  });
-
-  // Update content if command handler modified it
-  if (commandResult.content !== undefined) {
-    content = commandResult.content;
-  }
-
-  // For non-command group messages, check @mention requirement
-  // Command messages bypass the @mention check (per spec)
-  if (isGroup && !commandResult.isCommand) {
-    const isMention = mention(content, chatId, targetId, loginInfo);
+  // For group messages, check @mention requirement
+  if (isGroup) {
+    const isMention = mention(account, msg.text, peerId, msg.targetId, loginInfo);
     if (!isMention) {
       log.debug('dispatch', `Skipping group message (not mentioned)`);
-      const groupConfig = getGroupConfig(chatId, config);
+      const groupConfig = getGroupConfig(peerId, account);
       recordPendingHistoryEntry({
         historyMap: historyCache,
-        historyKey: chatId,
+        historyKey: peerId,
         limit: groupConfig.historyLimit ?? 20,
         entry: {
-          sender: `${senderName}(${senderId})`,
-          body: content,
-          timestamp: timestamp,
-          messageId: messageId || '',
+          sender: `${msg.senderName}(${msg.senderId})`,
+          body: msg.text,
+          timestamp: msg.timestamp,
+          messageId: msg.messageId,
         },
       })
       return;
     }
   }
 
-  const { route, buildEnvelope } = resolveInboundRouteEnvelopeBuilderWithRuntime({
-    cfg: context.cfg,
-    channel: CHANNEL_ID,
-    accountId: context.accountId,
+  const { channel } = runtime
+
+  // 1.解析路由
+  const route = channel.routing.resolveAgentRoute({
+    cfg,
+    channel: QQ_CHANNEL,
+    accountId: account.accountId,
     peer: {
-      kind: isGroup ? ("group" as const) : ("direct" as const),
-      id: chatId,
+      kind: isGroup ? "group" : "direct",
+      id: peerId,
     },
-    runtime: runtime.channel,
-    sessionStore: context.cfg.session?.store
   });
 
-  // 终止信号
-  const session = getSession(route.sessionKey);
-  if (session.abortController) {
-    session.abortController.abort();
-    session.aborted = true;
-    log.info('dispatch', `Aborted previous session`)
-  }
-
-  if (isGroup) {
-    const groupConfig = getGroupConfig(chatId, config);
-    content = buildPendingHistoryContextFromMap({
-      historyMap: historyCache,
-      historyKey: chatId,
-      limit: groupConfig.historyLimit ?? 20,
-      currentMessage: content,
-      formatEntry: (e) => `${e.sender}: ${e.body}`,
-    })
-  }
-
-  const fromLabel = isGroup ? `group:${chatId}` : senderName || `user:${senderId}`;
-  const { storePath, body } = buildEnvelope({
-    channel: CHANNEL_ID,
-    from: fromLabel,
-    body: content,
-    timestamp,
+  // 2.构建 Envelope
+  const storePath = channel.session.resolveStorePath(cfg.session?.store, {
+    agentId: route.agentId
   });
-  log.debug('dispatch', `Inbound envelope: ${body}`)
-  const fromAddress = `qq:${fromLabel}`;
-  const toAddress = `qq:${chatId}`;
-  const ctxPayload = runtime.channel.reply.finalizeInboundContext({
-    Body: body,
-    RawBody: content,
-    CommandBody: content,
-    From: fromAddress,
-    To: toAddress,
-    SessionKey: route.sessionKey,
-    AccountId: route.accountId,
-    ChatType: isGroup ? 'group' : 'direct',
-    ConversationLabel: fromLabel,
-    SenderId: senderId,
-    SenderName: senderName,
-    Provider: CHANNEL_ID,
-    Surface: CHANNEL_ID,
-    MessageSid: messageId,
-    Timestamp: timestamp,
-    MediaType: media?.type,
-    MediaPath: media?.path,
-    MediaUrl: media?.url,
-    OriginatingChannel: CHANNEL_ID,
-    OriginatingTo: toAddress,
-    CommandAuthorized: commandResult.isCommand,
-    OwnerAllowFrom: ["*"],
-  });
-
-  log.info('dispatch', `Dispatching to agent ${route.agentId}, session: ${route.sessionKey}`);
-
-  await runtime.channel.session.recordInboundSession({
+  const previousTimestamp = channel.session.readSessionUpdatedAt({
     storePath,
     sessionKey: route.sessionKey,
+  });
+  const envelopeOptions = channel.reply.resolveEnvelopeFormatOptions(cfg);
+  const fromLabel = isGroup ? `group:${peerId}` : (msg.senderName ?? `user:${msg.senderId}`);
+  const body = channel.reply.formatAgentEnvelope({
+    channel: QQ_CHANNEL,
+    from: fromLabel,
+    timestamp: msg.timestamp,
+    previousTimestamp,
+    envelope: envelopeOptions,
+    body: msg.text,
+  });
+
+  // 3.构建消息上下文
+  const ctxPayload = channel.reply.finalizeInboundContext({
+    Body: body,
+    BodyForAgent: msg.text,
+    RawBody: msg.text,
+    CommandBody: msg.text,
+    From: `${QQ_CHANNEL}:${msg.senderId}`,
+    To: `${QQ_CHANNEL}:${peerId}`,
+    SessionKey: route.sessionKey,
+    AccountId: route.accountId,
+    ChatType: isGroup ? "channel" : "direct",
+    ConversationLabel: fromLabel,
+    SenderId: msg.senderId,
+    SenderName: msg.senderName,
+    WasMentioned: isGroup ? (msg.wasMentioned ?? false) : undefined,
+    Provider: QQ_CHANNEL,
+    Surface: QQ_CHANNEL,
+    MessageSid: msg.messageId,
+    MessageSidFull: msg.messageId,
+    Timestamp: msg.timestamp,
+    MediaType: msg.media?.type,
+    MediaPath: msg.media?.path,
+    MediaUrl: msg.media?.url,
+    ReplyToId: msg.replyToId,
+    OriginatingChannel: QQ_CHANNEL,
+    OriginatingTo: `${QQ_CHANNEL}:${peerId}`,
+  });
+
+  // 4.记录 Session
+  channel.session.recordSessionMetaFromInbound({
+    storePath,
+    sessionKey: ctxPayload.SessionKey ?? route.sessionKey,
     ctx: ctxPayload,
-    onRecordError(err): void {
-      log.error('dispatch', `Failed to record inbound session: ${err}`);
+  }).catch((err) => {
+    log.error('dispatch', `session record failed: ${err}`);
+  });
+
+  // 5.创建 Reply Pipeline
+  const { onModelSelected, ...replyPipeline } = createChannelReplyPipeline({
+    cfg,
+    agentId: route.agentId,
+    channel: QQ_CHANNEL,
+    accountId: route.accountId,
+  });
+
+  // 6.分发 Reply
+  await channel.reply.dispatchReplyWithBufferedBlockDispatcher({
+    ctx: ctxPayload,
+    cfg,
+    dispatcherOptions: {
+      ...replyPipeline,
+      onReplyStart: async (): Promise<void> => {
+        if (!isGroup) {
+          // 输入状态
+          await setInputStatus({
+            user_id: msg.senderId,
+            event_type: 1
+          });
+        }
+      },
+      deliver: async (payload) => {
+        const reply = resolveSendableOutboundReplyParts(payload);
+        if (!reply.hasContent) return;
+
+        const chunkLimit = 4000;
+        const chunks = reply.trimmedText
+          ? channel.text.chunkMarkdownText(reply.trimmedText, chunkLimit)
+          : [];
+        const to = msg.replyToId ?? peerId
+
+        const messageSegments: OpenClawMessage[] = []
+
+        for (const chunk of chunks) {
+          messageSegments.push({ type: "text", text: chunk });
+        }
+        if (reply.hasMedia) {
+          for (const mediaUrl of reply.mediaUrls) {
+            messageSegments.push(buildMediaMessage(mediaUrl));
+          }
+        }
+
+        await send(account, isGroup, to, messageSegments)
+      },
+      onError: (err, info) => {
+        log.error('dispatch', `${info.kind} reply failed: ${err}`);
+      },
+    },
+    replyOptions: {
+      onModelSelected,
     },
   });
 
-  // 使用原生回复前缀配置系统
-  const { onModelSelected, ...prefixOptions } = createReplyPrefixOptions({
-    cfg: context.cfg,
-    agentId: route.agentId,
-    channel: CHANNEL_ID,
-    accountId: context.accountId,
-  });
+  // 7.结束输入状态
+  if (!isGroup) {
+    await setInputStatus({
+      user_id: msg.senderId,
+      event_type: 2
+    });
+  }
+}
 
-  try {
-    session.abortController = new AbortController()
-    updateSession(route.sessionKey, session)
-    await runtime.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
-      ctx: ctxPayload,
-      cfg: context.cfg,
-      dispatcherOptions: {
-        ...prefixOptions,
-        onReplyStart: async (): Promise<void> => {
-          if (!isGroup) {
-            // 输入状态
-            await setInputStatus({
-              user_id: senderId,
-              event_type: 1
-            });
-          }
-        },
-        deliver: async (payload: ReplyPayload, info: { kind: string }): Promise<void> => {
-          if (session.aborted) {
-            session.aborted = false;
-            log.info('dispatch', `aborted skipping`)
-            return;
-          }
+export function createInboundHandler(params: {
+  cfg: OpenClawConfig;
+  account: QQAccount;
+  runtime: PluginRuntime;
+}) {
+  const debouncer = createDebouncer(params);
 
-          if (isGroup) {
-            clearHistoryEntries({ historyMap: historyCache, historyKey: chatId })
-          }
-          log.info('dispatch', `deliver(${info.kind}): ${JSON.stringify(payload)}`);
-
-          if (payload.text && !payload.text.startsWith('MEDIA:')) {
-            await sendText(isGroup, chatId, payload.text);
-          }
-          if (payload.text && payload.text.startsWith('MEDIA:')) {
-            await sendMedia(isGroup, chatId, payload.text.replace('MEDIA:', ''));
-          }
-          if (payload.mediaUrl) {
-            await sendMedia(isGroup, chatId, payload.mediaUrl);
-          }
-          if (payload.mediaUrls && payload.mediaUrls.length > 0) {
-            for (const mediaUrl of payload.mediaUrls) {
-              await sendMedia(isGroup, chatId, mediaUrl);
-            }
-          }
-        },
-        onError: async (err: unknown): Promise<void> => {
-          log.error('dispatch', `Dispatch error: ${err}`);
-          await sendText(isGroup, chatId, `[错误]\n${String(err)}`);
-        },
-      },
-      replyOptions: {
-        abortSignal: session.abortController?.signal,
-        onModelSelected,
-      },
+  return async (msg: InboundMessage) => {
+    const canDebounce = shouldDebounceTextInbound({
+      text: msg.text,
+      cfg: params.cfg,
+      hasMedia: msg.hasMedia,
     });
 
-    log.info('dispatch', `Dispatch completed`);
-  } catch (error) {
-    log.error('dispatch', `Message processing failed: ${error}`);
-  } finally {
-    if (!isGroup) {
-      // 输入状态
-      await setInputStatus({
-        user_id: senderId,
-        event_type: 2
+    if (canDebounce && debouncer.debounceMs > 0) {
+      await debouncer.debouncer.enqueue({
+        ...params,
+        msg,
+      });
+    } else {
+      await processInboundMessage({
+        ...params,
+        msg,
       });
     }
-    clearSession(route.sessionKey);
-  }
+  };
 }

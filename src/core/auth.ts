@@ -18,9 +18,8 @@
  * 8. 默认 - 拒绝
  */
 
-import type { OpenClawConfig } from "openclaw/plugin-sdk";
 import { Logger as log } from "../utils/index.js";
-import type { QQAllowConfig } from "../types";
+import type { QQAccount, QQAllowConfig } from "../types";
 
 // ============================================================================
 // Types
@@ -58,10 +57,6 @@ export interface QQCommandAuthorization {
   senderIsOwner: boolean;
   /** 是否授权 */
   isAuthorizedSender: boolean;
-  /** 来源地址 */
-  from?: string;
-  /** 目标地址 */
-  to?: string;
   /** 拒绝原因（如果被拒绝） */
   denialReason?: QQDenialReason;
   /** 授权匹配来源（如果被授权） */
@@ -74,12 +69,6 @@ export interface QQCommandAuthorization {
 export interface ResolveQQCommandAuthorizationParams {
   /** 发送者 ID */
   senderId: string;
-  /** 来源地址 */
-  from?: string;
-  /** 目标地址 */
-  to?: string;
-  /** OpenClaw 全局配置 */
-  cfg: OpenClawConfig;
   /** QQ 频道配置 (群组或私聊) */
   qqConfig: QQAllowConfig;
 }
@@ -96,34 +85,6 @@ function isSenderInList(senderId: string, allowFrom: string[] | undefined): bool
   return allowFrom.includes(senderId);
 }
 
-/**
- * 检查全局 commands.allowFrom 配置
- * 返回: { authorized: boolean, matchedBy: QQMatchedBy | undefined }
- */
-function checkGlobalCommandsAllowFrom(
-  senderId: string,
-  cfg: OpenClawConfig
-): { authorized: boolean; matchedBy: QQMatchedBy | undefined } {
-  const commandsAllowFrom = cfg.commands?.allowFrom;
-  if (!commandsAllowFrom || typeof commandsAllowFrom !== "object") {
-    return { authorized: false, matchedBy: undefined };
-  }
-
-  // 检查 commands.allowFrom.qq
-  const qqList = commandsAllowFrom["qq"];
-  if (Array.isArray(qqList) && qqList.includes(senderId)) {
-    return { authorized: true, matchedBy: "commands_qq" };
-  }
-
-  // 检查 commands.allowFrom["*"]
-  const globalList = commandsAllowFrom["*"];
-  if (Array.isArray(globalList) && globalList.includes(senderId)) {
-    return { authorized: true, matchedBy: "commands_wildcard" };
-  }
-
-  return { authorized: false, matchedBy: undefined };
-}
-
 // ============================================================================
 // Main Function
 // ============================================================================
@@ -136,7 +97,7 @@ function checkGlobalCommandsAllowFrom(
 export function resolveQQCommandAuthorization(
   params: ResolveQQCommandAuthorizationParams
 ): QQCommandAuthorization {
-  const { senderId, from, to, cfg, qqConfig } = params;
+  const { senderId, qqConfig } = params;
 
   // ============================================================
   // 第一层: 预处理 (QQ 特有的"硬拒绝"规则)
@@ -154,8 +115,6 @@ export function resolveQQCommandAuthorization(
       senderId,
       senderIsOwner: false,
       isAuthorizedSender: false,
-      from,
-      to,
       denialReason: "denyFrom",
     };
   }
@@ -172,8 +131,6 @@ export function resolveQQCommandAuthorization(
       senderId,
       senderIsOwner: false,
       isAuthorizedSender: false,
-      from,
-      to,
       denialReason: "policy_deny",
     };
   }
@@ -195,45 +152,12 @@ export function resolveQQCommandAuthorization(
       senderId,
       senderIsOwner: true,
       isAuthorizedSender: true,
-      from,
-      to,
       matchedBy: "channel_allowFrom",
     };
   }
 
   // ============================================================
-  // 第三层: 全局 commands.allowFrom 检查
-  // 处理 commands.allowFrom.qq, commands.allowFrom["*"]
-  // ============================================================
-
-  const globalAuth = checkGlobalCommandsAllowFrom(senderId, cfg);
-  if (globalAuth.authorized) {
-    log.debug(
-      "auth",
-      `Authorization granted for user ${senderId}: via ${globalAuth.matchedBy}`
-    );
-
-    // 获取 owner 列表
-    const commandsAllowFrom = cfg.commands?.allowFrom;
-    const ownerList =
-      globalAuth.matchedBy === "commands_qq"
-        ? (commandsAllowFrom?.["qq"] as string[])
-        : (commandsAllowFrom?.["*"] as string[]);
-
-    return {
-      providerId: "qq",
-      ownerList: ownerList || [],
-      senderId,
-      senderIsOwner: true,
-      isAuthorizedSender: true,
-      from,
-      to,
-      matchedBy: globalAuth.matchedBy,
-    };
-  }
-
-  // ============================================================
-  // 第四层: 后处理 (QQ 特有的覆盖规则)
+  // 第三层: 后处理 (QQ 特有的覆盖规则)
   // ============================================================
 
   // Level 6: policy='allow' (频道级全局允许)
@@ -248,8 +172,6 @@ export function resolveQQCommandAuthorization(
       senderId,
       senderIsOwner: false,
       isAuthorizedSender: true,
-      from,
-      to,
       matchedBy: "policy_allow",
     };
   }
@@ -266,8 +188,6 @@ export function resolveQQCommandAuthorization(
       senderId,
       senderIsOwner: false,
       isAuthorizedSender: false,
-      from,
-      to,
       denialReason: "not_in_allowlist",
     };
   }
@@ -283,8 +203,6 @@ export function resolveQQCommandAuthorization(
     senderId,
     senderIsOwner: false,
     isAuthorizedSender: false,
-    from,
-    to,
     denialReason: "default_deny",
   };
 }
@@ -299,7 +217,7 @@ export function resolveQQCommandAuthorization(
 export function getQQConfigByChatType(
   isGroup: boolean,
   groupId: string | undefined,
-  config: { messageDirect: QQAllowConfig; messageGroup: QQAllowConfig; messageGroupsCustom: Record<string, QQAllowConfig> }
+  config: QQAccount
 ): QQAllowConfig {
   if (!isGroup) {
     return config.messageDirect;

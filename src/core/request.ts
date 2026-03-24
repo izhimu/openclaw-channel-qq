@@ -11,11 +11,11 @@ import type {
   SetInputStatusReq,
   GetFriendListResp,
   GetGroupListResp,
-  NapCatEvent
+  NapCatEvent, QQAccount, InboundMessage
 } from "../types";
 import pLimit from 'p-limit';
 import { Logger as log } from "../utils/index.js"
-import { getContext, getConnection, getRuntime } from "./runtime.js"
+import { getConnection } from "./runtime.js"
 import { createQQEventHandler } from "./event-handler.js";
 import { failResp } from "./connection.js"
 
@@ -28,38 +28,10 @@ const sendMsgLimiter = pLimit(1);
 /**
  * 事件监听
  * 使用统一的事件处理器处理所有事件
- * @param event
  */
-export async function eventListener(event: NapCatEvent): Promise<void> {
+export async function eventListener(account: QQAccount, event: NapCatEvent, handler: (msg: InboundMessage) => Promise<void>): Promise<void> {
   log.debug("request", `Received event: ${event.post_type}`);
-
-  const context = getContext();
-  if (!context) {
-    log.warn("request", `No gateway context`);
-    return;
-  }
-
-  const runtime = getRuntime();
-  if (!runtime) {
-    log.warn("request", `No runtime available`);
-    return;
-  }
-
-  const connection = getConnection();
-  if (!connection) {
-    log.warn("request", `No connection available`);
-    return;
-  }
-
-  // 使用统一的事件处理器
-  const handler = createQQEventHandler({
-    runtime,
-    cfg: context.cfg,
-    accountId: context.accountId,
-    connection,
-  });
-
-  await handler(event);
+  await createQQEventHandler(account, handler)(event);
 }
 
 /**

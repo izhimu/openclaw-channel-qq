@@ -31,17 +31,16 @@
   "author": "izhimu",
   "license": "MIT",
   "openclaw": {
-    "extensions": [
-      "./dist/index.js"
-    ],
-    "install": {
-      "npmSpec": "@izhimu/qq",
-      "localPath": "extensions/qq",
-      "defaultChoice": "npm"
+    "extensions": ["./dist/index.js"],
+    "setupEntry": "",
+    "channel": {
+      "id": "qq",
+      "label": "QQ",
+      "blurb": "Connect OpenClaw to QQ Chat"
     }
   },
   "peerDependencies": {
-    "openclaw": "^2026.3.1"
+    "openclaw": "^2026.3.22"
   },
   "peerDependenciesMeta": {
     "openclaw": {
@@ -56,7 +55,7 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/ws": "^8.18.0",
-    "openclaw": "^2026.3.1",
+    "openclaw": "^2026.3.22",
     "typescript": "^5.0.0"
   }
 }

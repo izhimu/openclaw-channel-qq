@@ -9,8 +9,9 @@ import type {
   NapCatJsonSegment,
   OpenClawMessage,
   OpenClawJsonContent,
+  QQAccount,
 } from '../types';
-import { Logger as log, extractImageUrl, getEmojiForFaceId } from '../utils/index.js';
+import { Logger as log, extractImageUrl, getEmojiForFaceId, markdownToText } from '../utils/index.js';
 import { CQCodeUtils, type CQNode } from '../utils';
 import { getMsg } from "../core/request.js";
 
@@ -166,12 +167,13 @@ async function napCatToOpenClaw(segment: NapCatMessage): Promise<OpenClawMessage
 // OpenClaw -> NapCat Adapters (Outbound)
 // =============================================================================
 
-function openClawSegmentToNapCat(
-  content: OpenClawMessage
+function openClawToNapCat(
+  content: OpenClawMessage,
+  account: QQAccount
 ): NapCatMessage | null {
   switch (content.type) {
     case 'text':
-      return { type: 'text', data: { text: content.text } };
+      return { type: 'text', data: { text: account.markdownFormat ? markdownToText(content.text) : content.text } };
 
     case 'at':
       return { type: 'at', data: { qq: content.isAll ? 'all' : content.userId } };
@@ -197,11 +199,11 @@ function openClawSegmentToNapCat(
   }
 }
 
-export function openClawToNapCatMessage(content: OpenClawMessage[]): NapCatMessage[] {
+export async function outboundMessageAdapter(content: OpenClawMessage[], account: QQAccount): Promise<NapCatMessage[]> {
   const segments: NapCatMessage[] = [];
 
   for (const item of content) {
-    const segment = openClawSegmentToNapCat(item);
+    const segment = openClawToNapCat(item, account);
     if (segment) {
       segments.push(segment);
     }
@@ -210,7 +212,7 @@ export function openClawToNapCatMessage(content: OpenClawMessage[]): NapCatMessa
   return segments;
 }
 
-export async function napCatToOpenClawMessage(segments: NapCatMessage[] | string): Promise<OpenClawMessage[]> {
+export async function inboundMessageAdapter(segments: NapCatMessage[] | string): Promise<OpenClawMessage[]> {
   const normalized = normalizeMessage(segments);
 
   const content: OpenClawMessage[] = [];

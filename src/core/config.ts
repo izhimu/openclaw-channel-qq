@@ -1,13 +1,9 @@
-/**
- * QQ 配置管理
- */
-
-import type { OpenClawConfig } from "openclaw/plugin-sdk";
-import { DEFAULT_ACCOUNT_ID } from "openclaw/plugin-sdk";
-import type { QQConfig } from "../types";
+import { DEFAULT_ACCOUNT_ID } from "openclaw/plugin-sdk/core";
+import type { OpenClawConfig } from "openclaw/plugin-sdk/core";
+import type { QQAccount } from "../types";
 import { z } from "zod";
 
-export const CHANNEL_ID = "qq"
+export const QQ_CHANNEL = "qq"
 
 export const DEBUG_MODE = false
 
@@ -15,10 +11,10 @@ export const DEBUG_MODE = false
  * 列出所有 QQ 账户ID
  */
 export function listQQAccountIds(cfg: OpenClawConfig): string[] {
-  const config = cfg.channels?.[CHANNEL_ID] as QQConfig;
+  const config = cfg.channels?.[QQ_CHANNEL] as QQAccount;
 
   if (config?.wsUrl) {
-    return [DEFAULT_ACCOUNT_ID];
+    return ["default"];
   }
 
   return [];
@@ -29,10 +25,12 @@ export function listQQAccountIds(cfg: OpenClawConfig): string[] {
  */
 export function resolveQQAccount(params: {
   cfg: OpenClawConfig,
-}): QQConfig {
-  const config = params.cfg.channels?.[CHANNEL_ID] as QQConfig;
+  accountId?: string | null;
+}): QQAccount {
+  const config = params.cfg.channels?.[QQ_CHANNEL] as QQAccount;
 
   return {
+    accountId: params.accountId ?? DEFAULT_ACCOUNT_ID,
     enabled: config?.enabled !== false,
     wsUrl: config?.wsUrl ?? "",
     token: config?.accessToken ?? "",

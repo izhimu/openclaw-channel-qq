@@ -1,7 +1,42 @@
-/**
- * NapCat WebSocket API Types
- * Based on NapCat OneBot 11 implementation
- */
+import type { OpenClawConfig, PluginRuntime } from "openclaw/plugin-sdk/core";
+
+export interface QQAccount {
+  accountId: string
+  wsUrl: string;
+  token?: string;
+  accessToken?: string;
+  enabled: boolean;
+  markdownFormat: boolean;
+  messageDirect: QQAllowConfig
+  messageGroup: QQGroupConfig;
+  messageGroupsCustom: Record<string, QQGroupConfig>;
+}
+
+export interface InboundMessage {
+  targetId: string;
+  messageId: string;
+  senderId: string;
+  senderName?: string;
+  text: string;
+  timestamp: number;
+  isGroup: boolean;
+  groupId?: string;
+  wasMentioned?: boolean;
+  replyToId?: string;
+  hasMedia?: boolean;
+  media?: DispatchMessageMedia;
+  authorization?: {
+    isAuthorizedSender: boolean;
+    denialReason?: string;
+  };
+}
+
+export interface ProcessInboundParams {
+  cfg: OpenClawConfig;
+  account: QQAccount;
+  runtime: PluginRuntime;
+  msg: InboundMessage;
+}
 
 // =============================================================================
 // NapCat API Request/Response Format
@@ -59,6 +94,38 @@ export interface NapCatMetaEvent extends NapCatEvent {
   post_type: 'meta_event';
   meta_event_type: 'lifecycle' | 'heartbeat';
   sub_type?: 'connect' | 'disconnect' | 'enable' | 'disable';
+}
+
+/**
+ * NapCat 消息事件类型
+ */
+export interface NapCatMessageEvent extends NapCatEvent {
+  post_type: "message";
+  message_type: "group" | "private";
+  message: NapCatMessage[];
+  raw_message: string;
+  user_id: number;
+  group_id?: number;
+  message_id?: number;
+  time: number;
+  sender?: {
+    nickname?: string;
+    card?: string;
+  };
+}
+
+/**
+ * NapCat 通知事件类型
+ */
+export interface NapCatNoticeEvent extends NapCatEvent {
+  post_type: "notice";
+  notice_type: "poke" | "notify";
+  sub_type?: string;
+  user_id: number;
+  target_id: number;
+  group_id?: number;
+  time: number;
+  raw_info?: Array<{ type: string; txt?: string }>;
 }
 
 // =============================================================================
@@ -405,17 +472,6 @@ export interface DispatchMessageParams {
   targetId?: string;
 }
 
-export interface QQConfig {
-  wsUrl: string;
-  token?: string;
-  accessToken?: string;
-  enabled: boolean;
-  markdownFormat: boolean;
-  messageDirect: QQAllowConfig
-  messageGroup: QQGroupConfig;
-  messageGroupsCustom: Record<string, QQGroupConfig>;
-}
-
 export interface QQGroupConfig extends QQAllowConfig {
   requireMention: boolean;
   requirePoke: boolean;
@@ -474,8 +530,6 @@ export interface QQEventContext {
   senderName?: string;
 
   // 聊天信息
-  /** 聊天类型 */
-  chatType: "group" | "direct";
   /** 聊天 ID（群 ID 或用户 ID） */
   chatId: string;
   /** 群 ID（仅群消息） */
@@ -507,8 +561,6 @@ export interface QQEventContext {
  * QQ 事件处理器工厂参数
  */
 export interface QQEventHandlerParams {
-  /** OpenClaw 运行时 */
-  runtime: unknown;
   /** OpenClaw 配置 */
   cfg: unknown;
   /** 账户 ID */

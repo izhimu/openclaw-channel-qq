@@ -57,9 +57,9 @@ openclaw/
 ├── extensions/           # Plugin workspace
 │   ├── my-channel/      # Your plugin directory
 │   │   ├── src/
-│   │   │   ├── channel.ts
+│   │   │   ├── channel.old.ts
 │   │   │   └── runtime.ts
-│   │   ├── channel.ts
+│   │   ├── channel.old.ts
 │   │   ├── openclaw.plugin.json  (optional)
 │   │   └── package.json
 │   ├── telegram/
@@ -87,7 +87,7 @@ openclaw/
     "openclaw": "workspace:*"
   },
   "openclaw": {
-    "extensions": ["./channel.ts"]
+    "extensions": ["./channel.old.ts"]
   }
 }
 ```
@@ -122,11 +122,11 @@ A minimal channel plugin:
 ```
 extensions/my-channel/
 ├── src/
-│   ├── channel.ts      # Main plugin implementation
+│   ├── channel.old.ts      # Main plugin implementation
 │   ├── runtime.ts      # Platform-specific runtime (optional)
 │   ├── providers/      # Provider implementations (optional)
 │   └── types.ts        # Type definitions (optional)
-├── channel.ts            # Plugin entry point
+├── channel.old.ts            # Plugin entry point
 ├── package.json
 └── README.md
 ```
@@ -171,7 +171,7 @@ export interface ChannelPlugin<TResolvedAccount = any> {
 ### Basic Channel Plugin Example
 
 ```typescript
-// extensions/my-channel/src/channel.ts
+// extensions/my-channel/src/channel.old.ts
 import type {
   ChannelPlugin,
   ChannelOutboundAdapter,
@@ -276,7 +276,7 @@ export const myChannelPlugin: ChannelPlugin<MyChannelAccount> = {
 ```
 
 ```typescript
-// extensions/my-channel/channel.ts
+// extensions/my-channel/channel.old.ts
 import { myChannelPlugin } from "./src/channel.js";
 
 export default {
@@ -999,7 +999,7 @@ export type PluginHookName =
 A complete minimal channel plugin for a hypothetical messaging platform.
 
 ```typescript
-// extensions/simplebot/src/channel.ts
+// extensions/simplebot/src/channel.old.ts
 import type {
   ChannelPlugin,
   ChannelOutboundAdapter,
@@ -1222,7 +1222,7 @@ export const simpleBotPlugin: ChannelPlugin<SimpleBotAccount> = {
 ```
 
 ```typescript
-// extensions/simplebot/channel.ts
+// extensions/simplebot/channel.old.ts
 import { simpleBotPlugin } from "./src/channel.js";
 
 export default {
@@ -1246,7 +1246,7 @@ export default {
     "openclaw": "workspace:*"
   },
   "openclaw": {
-    "extensions": ["./channel.ts"]
+    "extensions": ["./channel.old.ts"]
   }
 }
 ```
@@ -1256,7 +1256,7 @@ export default {
 A simplified voice call channel with full-duplex audio support.
 
 ```typescript
-// extensions/voice-channel/src/channel.ts
+// extensions/voice-channel/src/channel.old.ts
 import type {
   ChannelPlugin,
   ChannelConfigAdapter,
@@ -1416,7 +1416,7 @@ export const voiceChannelPlugin: ChannelPlugin<VoiceChannelAccount> = {
 ### Example 3: Plugin with Custom Tools
 
 ```typescript
-// extensions/weather-tools/channel.ts
+// extensions/weather-tools/channel.old.ts
 import { Type } from "@sinclair/typebox";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 
@@ -1604,7 +1604,7 @@ pnpm link --global @openclaw/my-channel
 - **Official Docs**: https://docs.openclaw.ai/plugin
 - **Core Plugins**: Check `extensions/` directory for examples
 - **Built-in Channels**: Check `src/channels/` for core implementations
-- **Plugin SDK**: Check `src/plugin-sdk/channel.ts` for all exports
+- **Plugin SDK**: Check `src/plugin-sdk/channel.old.ts` for all exports
 
 ---
 
@@ -1613,7 +1613,7 @@ pnpm link --global @openclaw/my-channel
 ### Plugin Not Loading
 
 - Check `package.json` has correct `openclaw.extensions` entry
-- Verify `channel.ts` exports a default plugin object
+- Verify `channel.old.ts` exports a default plugin object
 - Ensure dependencies are in `dependencies`, not `devDependencies`
 
 ### Runtime Errors

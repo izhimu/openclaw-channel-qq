@@ -10,7 +10,7 @@ import type {
   NapCatResp,
   NapCatEvent,
   NapCatMetaEvent,
-  QQConfig,
+  QQAccount,
   ConnectionState,
   ConnectionStatus,
   PendingRequest,
@@ -32,7 +32,7 @@ const HEARTBEAT_CHECK_INTERVAL = 60000; // 60 seconds - how often to check for h
  * Connection Manager for a single NapCat account
  */
 export class ConnectionManager extends EventEmitter {
-  private config: QQConfig;
+  private config: QQAccount;
   private ws: WebSocket | null = null;
   private state: ConnectionState = 'disconnected';
 
@@ -55,7 +55,7 @@ export class ConnectionManager extends EventEmitter {
     consecutiveFailures: 0,
   };
 
-  constructor(config: QQConfig) {
+  constructor(config: QQAccount) {
     super();
     this.config = config;
   }
