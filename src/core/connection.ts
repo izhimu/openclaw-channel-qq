@@ -61,6 +61,23 @@ export class ConnectionManager extends EventEmitter {
   }
 
   // ==========================================================================
+  // Health Status Management
+  // ==========================================================================
+
+  /**
+   * Update health status and emit heartbeat event
+   */
+  private updateHealthStatus(healthy: boolean): void {
+    this.lastHeartbeatTime = Date.now();
+    this.healthStatus = {
+      healthy,
+      lastHeartbeatAt: this.lastHeartbeatTime,
+      consecutiveFailures: healthy ? 0 : this.healthStatus.consecutiveFailures + 1,
+    };
+    this.emit('heartbeat', this.healthStatus);
+  }
+
+  // ==========================================================================
   // Connection Lifecycle
   // ==========================================================================
 
@@ -193,12 +210,7 @@ export class ConnectionManager extends EventEmitter {
 
       if (elapsed > HEARTBEAT_TIMEOUT && this.isConnected()) {
         log.warn('connection', `Heartbeat timeout (${elapsed}ms since last heartbeat), reconnecting...`);
-        this.healthStatus = {
-          healthy: false,
-          lastHeartbeatAt: this.lastHeartbeatTime,
-          consecutiveFailures: this.healthStatus.consecutiveFailures + 1,
-        };
-        this.emit('heartbeat', this.healthStatus);
+        this.updateHealthStatus(false);
 
         // Close connection and trigger immediate reconnect
         this.setState('disconnected');
@@ -304,16 +316,8 @@ export class ConnectionManager extends EventEmitter {
    */
   private handleMetaEvent(event: NapCatMetaEvent): void {
     if (event.meta_event_type === 'heartbeat') {
-      // NapCat sent us a heartbeat - update health status
-      this.lastHeartbeatTime = Date.now();
-      this.healthStatus = {
-        healthy: true,
-        lastHeartbeatAt: this.lastHeartbeatTime,
-        consecutiveFailures: 0,
-      };
-
       log.debug('connection', `Received heartbeat`);
-      this.emit('heartbeat', this.healthStatus);
+      this.updateHealthStatus(true);
     } else if (event.meta_event_type === 'lifecycle') {
       log.info('connection', `Lifecycle event: ${event.sub_type}`);
       this.emit('lifecycle', event);

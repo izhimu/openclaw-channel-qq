@@ -65,29 +65,24 @@ interface JsonMessageData {
 }
 
 function parseJsonSegment(segment: NapCatJsonSegment): OpenClawJsonContent | OpenClawMessage | null {
+  const rawData = segment.data.data.trim();
+  let jsonData: JsonMessageData | undefined;
   try {
-    const rawData = segment.data.data.trim();
-    let jsonData: JsonMessageData | undefined;
-    try {
-      jsonData = JSON.parse(rawData);
-    } catch (error) {
-      log.warn('adapters', `Failed to parse JSON message: ${error}`);
-    }
-
-    const result: OpenClawJsonContent = {
-      type: 'json',
-      data: rawData,
-    };
-
-    if (jsonData?.prompt && jsonData.prompt.trim() !== '') {
-      result.prompt = jsonData.prompt;
-    }
-
-    return result;
+    jsonData = JSON.parse(rawData);
   } catch (error) {
     log.warn('adapters', `Failed to parse JSON message: ${error}`);
-    return null;
   }
+
+  const result: OpenClawJsonContent = {
+    type: 'json',
+    data: rawData,
+  };
+
+  if (jsonData?.prompt && jsonData.prompt.trim() !== '') {
+    result.prompt = jsonData.prompt;
+  }
+
+  return result;
 }
 
 // =============================================================================

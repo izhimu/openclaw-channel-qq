@@ -485,17 +485,6 @@ export interface QQAllowConfig {
   denyFrom: string[];
 }
 
-export type QQProbe = {
-  ok: boolean;
-  status?: number | null;
-  error?: string | null;
-}
-
-export type QQSession = {
-  abortController?: AbortController;
-  aborted?: boolean;
-}
-
 export type QQLoginInfo = {
   userId: string;
   nickname: string;
@@ -504,67 +493,3 @@ export type QQLoginInfo = {
 // =============================================================================
 // Event Handler Types
 // =============================================================================
-
-/**
- * QQ 事件类型（规范化格式）
- */
-export type QQEventType =
-  | "message:group"
-  | "message:private"
-  | "notice:poke";
-
-/**
- * QQ 事件上下文
- * 统一的事件上下文对象，用于事件处理和消息分发
- */
-export interface QQEventContext {
-  /** 原始 NapCat 事件 */
-  event: NapCatEvent;
-  /** 规范化的事件类型 */
-  eventType: QQEventType;
-
-  // 发送者信息
-  /** 发送者 ID */
-  senderId: string;
-  /** 发送者昵称 */
-  senderName?: string;
-
-  // 聊天信息
-  /** 聊天 ID（群 ID 或用户 ID） */
-  chatId: string;
-  /** 群 ID（仅群消息） */
-  groupId?: string;
-
-  // 消息内容（仅消息事件）
-  /** 解析后的消息文本 */
-  content?: string;
-  /** 媒体信息 */
-  media?: DispatchMessageMedia;
-  /** 消息 ID */
-  messageId?: string;
-  /** 事件时间戳（毫秒） */
-  timestamp: number;
-
-  // 目标信息（仅戳一戳事件）
-  /** 目标 ID */
-  targetId?: string;
-
-  // 授权信息
-  /** 授权检查结果（由事件处理器填充） */
-  authorization?: {
-    isAuthorizedSender: boolean;
-    denialReason?: string;
-  };
-}
-
-/**
- * QQ 事件处理器工厂参数
- */
-export interface QQEventHandlerParams {
-  /** OpenClaw 配置 */
-  cfg: unknown;
-  /** 账户 ID */
-  accountId: string;
-  /** 连接管理器 */
-  connection: unknown;
-}

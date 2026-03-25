@@ -4,7 +4,7 @@ import { createChannelReplyPipeline } from "openclaw/plugin-sdk/channel-reply-pi
 import { resolveSendableOutboundReplyParts } from "openclaw/plugin-sdk/reply-payload"
 import { recordPendingHistoryEntry } from "openclaw/plugin-sdk/reply-history"
 import type {
-  OpenClawMessage, QQAccount, QQGroupConfig, QQLoginInfo,
+  OpenClawMessage, QQAccount, QQLoginInfo,
   ProcessInboundParams, InboundMessage
 } from '../types';
 import {
@@ -15,6 +15,7 @@ import { sendMsg, setInputStatus } from './request.js'
 import { outboundMessageAdapter } from '../adapters/message.js';
 import { Logger as log, buildMediaMessage } from '../utils/index.js';
 import { QQ_CHANNEL } from "./config.js";
+import { getQQConfigByChatType } from "./auth.js";
 
 async function send(account: QQAccount, isGroup: boolean, to: string, messageSegments: OpenClawMessage[]): Promise<void> {
   try {
@@ -30,24 +31,8 @@ async function send(account: QQAccount, isGroup: boolean, to: string, messageSeg
   }
 }
 
-function getGroupConfig(groupId: string, config: QQAccount): QQGroupConfig {
-  log.debug('dispatch', `All Custom config: ${JSON.stringify(config.messageGroupsCustom)}`)
-  let groupConfig = config.messageGroupsCustom[groupId];
-  if (!groupConfig) {
-    groupConfig = config.messageGroup
-    log.debug('dispatch', `Use global config: ${JSON.stringify(groupConfig)}`)
-  } else {
-    groupConfig = {
-      ...config.messageGroup,
-      ...groupConfig,
-    }
-  }
-  log.debug('dispatch', `Final config: ${JSON.stringify(groupConfig)}`)
-  return groupConfig
-}
-
 function mention(account: QQAccount, content: string, groupId: string, targetId?: string, loginInfo?: QQLoginInfo): boolean {
-  let config = getGroupConfig(groupId, account)
+  const config = getQQConfigByChatType(true, groupId, account);
 
   const isMentionEnabled = !!config?.requireMention;
   const isPokeEnabled = !!config?.requirePoke;
@@ -138,7 +123,7 @@ async function processInboundMessage(params: ProcessInboundParams): Promise<void
     const isMention = mention(account, msg.text, peerId, msg.targetId, loginInfo);
     if (!isMention) {
       log.debug('dispatch', `Skipping group message (not mentioned)`);
-      const groupConfig = getGroupConfig(peerId, account);
+      const groupConfig = getQQConfigByChatType(true, peerId, account);
       recordPendingHistoryEntry({
         historyMap: historyCache,
         historyKey: peerId,

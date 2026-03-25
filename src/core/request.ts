@@ -11,7 +11,7 @@ import type {
   SetInputStatusReq,
   GetFriendListResp,
   GetGroupListResp,
-  NapCatEvent, QQAccount, InboundMessage
+  NapCatEvent, QQAccount, InboundMessage, NapCatAction
 } from "../types";
 import pLimit from 'p-limit';
 import { Logger as log } from "../utils/index.js"
@@ -26,6 +26,24 @@ import { failResp } from "./connection.js"
 const sendMsgLimiter = pLimit(1);
 
 /**
+ * 通用请求执行器 - 统一处理连接检查
+ */
+function withConnection<T>(
+  action: NapCatAction,
+  params?: unknown,
+  limiter?: (fn: () => Promise<NapCatResp<T>>) => Promise<NapCatResp<T>>
+): Promise<NapCatResp<T>> {
+  const connection = getConnection();
+  if (!connection) {
+    log.warn("request", "No connection available");
+    return failResp();
+  }
+
+  const execute = (): Promise<NapCatResp<T>> => connection.sendRequest(action, params);
+  return limiter ? limiter(execute) : execute();
+}
+
+/**
  * 事件监听
  * 使用统一的事件处理器处理所有事件
  */
@@ -36,102 +54,56 @@ export async function eventListener(account: QQAccount, event: NapCatEvent, hand
 
 /**
  * 发送消息（带限流）
- * @param params
  */
 export async function sendMsg(params: SendMsgReq): Promise<NapCatResp<SendMsgResp>> {
-  const connection = getConnection();
-  if (!connection) {
-    log.warn("request", `No connection available`);
-    return failResp();
-  }
-
-  // 使用限流器控制并发，避免触发 NapCat API 限流
-  return sendMsgLimiter(() => connection.sendRequest("send_msg", params));
+  return withConnection("send_msg", params, (fn) => sendMsgLimiter(fn));
 }
 
 /**
  * 获取消息
- * @param params
  */
 export async function getMsg(params: GetMsgReq): Promise<NapCatResp<GetMsgResp>> {
-  const connection = getConnection();
-  if (!connection) {
-    log.warn("request", `No connection available`);
-    return failResp();
-  }
-  return connection.sendRequest("get_msg", params)
+  return withConnection("get_msg", params);
 }
 
 /**
  * 获取文件
- * @param params
  */
 export async function getFile(params: GetFileReq): Promise<NapCatResp<GetFileResp>> {
-  const connection = getConnection();
-  if (!connection) {
-    log.warn("request", `No connection available`);
-    return failResp();
-  }
-  return connection.sendRequest("get_file", params)
+  return withConnection("get_file", params);
 }
 
 /**
  * 设置输入状态
- * @param params
  */
 export async function setInputStatus(params: SetInputStatusReq): Promise<NapCatResp<void>> {
-  const connection = getConnection();
-  if (!connection) {
-    log.warn("request", `No connection available`);
-    return failResp();
-  }
-  return connection.sendRequest("set_input_status", params)
+  return withConnection("set_input_status", params);
 }
 
 /**
  * 获取状态
  */
 export async function getStatus(): Promise<NapCatResp<GetStatusResp>> {
-  const connection = getConnection();
-  if (!connection) {
-    log.warn("request", `No connection available`);
-    return failResp();
-  }
-  return connection.sendRequest("get_status")
+  return withConnection("get_status");
 }
 
 /**
  * 获取登录信息
  */
 export async function getLoginInfo(): Promise<NapCatResp<GetLoginInfoResp>> {
-  const connection = getConnection();
-  if (!connection) {
-    log.warn("request", `No connection available`);
-    return failResp();
-  }
-  return connection.sendRequest("get_login_info")
+  return withConnection("get_login_info");
 }
 
 /**
  * 获取好友列表
  */
 export async function getFriendList(): Promise<NapCatResp<GetFriendListResp[]>> {
-  const connection = getConnection();
-  if (!connection) {
-    log.warn("request", `No connection available`);
-    return failResp();
-  }
-  return connection.sendRequest("get_friend_list")
+  return withConnection("get_friend_list");
 }
 
 /**
  * 获取群列表
  */
 export async function getGroupList(): Promise<NapCatResp<GetGroupListResp[]>> {
-  const connection = getConnection();
-  if (!connection) {
-    log.warn("request", `No connection available`);
-    return failResp();
-  }
-  return connection.sendRequest("get_group_list")
+  return withConnection("get_group_list");
 }

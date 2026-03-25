@@ -19,7 +19,7 @@
  */
 
 import { Logger as log } from "../utils/index.js";
-import type { QQAccount, QQAllowConfig } from "../types";
+import type { QQAccount, QQAllowConfig, QQGroupConfig } from "../types";
 
 // ============================================================================
 // Types
@@ -212,20 +212,33 @@ export function resolveQQCommandAuthorization(
 // ============================================================================
 
 /**
+ * 默认群组配置（用于私聊场景）
+ */
+const DEFAULT_GROUP_CONFIG: Omit<QQGroupConfig, keyof QQAllowConfig> = {
+  requireMention: false,
+  requirePoke: false,
+  historyLimit: 20,
+};
+
+/**
  * 根据 chatType 获取对应的 QQ 配置
+ * 统一返回 QQGroupConfig 类型，私聊时使用默认值填充群组特有字段
  */
 export function getQQConfigByChatType(
   isGroup: boolean,
   groupId: string | undefined,
   config: QQAccount
-): QQAllowConfig {
+): QQGroupConfig {
+  // 私聊：返回 messageDirect + 默认群组配置
   if (!isGroup) {
-    return config.messageDirect;
+    return {
+      ...DEFAULT_GROUP_CONFIG,
+      ...config.messageDirect,
+    };
   }
 
-  // 检查是否有特定群组配置
+  // 群聊：检查是否有特定群组配置
   if (groupId && config.messageGroupsCustom[groupId]) {
-    // 合并全局群组配置和特定群组配置（特定配置优先）
     return {
       ...config.messageGroup,
       ...config.messageGroupsCustom[groupId],
