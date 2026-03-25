@@ -11,11 +11,15 @@ import type {
   NapCatEvent,
   NapCatMessageEvent,
   NapCatNoticeEvent,
-  DispatchMessageMedia,
-  OpenClawMessage, InboundMessage
+  InboundMessage
 } from "../types";
 import { resolveQQCommandAuthorization, getQQConfigByChatType } from "./auth.js";
-import { inboundMessageAdapter } from "../adapters/message.js";
+import {
+  inboundMessageAdapter,
+  formatContentToText,
+  hasMediaContent,
+  extractMedia,
+} from "../adapters/message.js";
 import { generateMessageId, Logger as log } from "../utils/index.js";
 import type { QQAccount } from "../types";
 
@@ -73,8 +77,8 @@ async function buildMessageEventContext(
 
   // 解析消息内容
   const content = await inboundMessageAdapter(event.message);
-  const plainText = await contentToPlainText(content);
-  const media = await contextToMedia(content);
+  const plainText = formatContentToText(content);
+  const media = hasMediaContent(content) ? extractMedia(content) : undefined;
 
   return {
     targetId: account.accountId,
@@ -213,97 +217,3 @@ export function createQQEventHandler(account: QQAccount, handler: (msg: InboundM
   };
 }
 
-// =============================================================================
-// Helper Functions (from dispatch.ts, will be used by dispatchMessage)
-// =============================================================================
-
-/**
- * 将 OpenClaw 消息内容转换为纯文本
- * (从 dispatch.ts 移植)
- */
-async function contentToPlainText(
-  content: OpenClawMessage[]
-): Promise<string> {
-  const results = await Promise.all(
-    content.map(async (c) => {
-      switch (c.type) {
-        case "text":
-          return c.text;
-        case "at": {
-          const target = c.isAll ? "@全体成员" : `@${c.userId || "unknown"}`;
-          return `[提及]${target}`;
-        }
-        case "image":
-          return `[图片]${c.url || ""}`;
-        case "audio":
-          return `[音频]${c.path || ""}`;
-        case "video":
-          return `[视频]${c.url || ""}`;
-        case "file":
-          // 文件处理需要 getFile，这里简化处理
-          return `[文件]${c.fileId || ""}`;
-        case "json":
-          return `[JSON]\n\n\`\`\`json\n${c.data || ""}\n\`\`\``;
-        case "reply": {
-          const senderInfo =
-            c.sender && c.senderId
-              ? `${c.sender}(${c.senderId})`
-              : "(未知用户)";
-          const replyMsg = c.message ?? "(无法获取原消息)";
-          const quotedContent = `${senderInfo}:\n${replyMsg}`.replace(
-            /^/gm,
-            "> "
-          );
-          return `[回复]\n\n${quotedContent}`;
-        }
-        default:
-          return null;
-      }
-    })
-  );
-  return results.filter((v): v is string => v !== null).join("\n");
-}
-
-/**
- * 从 OpenClaw 消息内容提取媒体信息
- * (从 dispatch.ts 移植)
- */
-async function contextToMedia(
-  content: OpenClawMessage[]
-): Promise<DispatchMessageMedia | undefined> {
-  const hasMedia = content.some(
-    (c) => c.type === "image" || c.type === "audio" || c.type === "file"
-  );
-  if (!hasMedia) {
-    return;
-  }
-
-  const image = content.find((c) => c.type === "image");
-  if (image) {
-    return {
-      type: "image/jpeg",
-      path: image.url,
-      url: image.url,
-    };
-  }
-
-  const audio = content.find((c) => c.type === "audio");
-  if (audio) {
-    return {
-      type: "audio/amr",
-      path: audio.path,
-      url: audio.url,
-    };
-  }
-
-  const file = content.find((c) => c.type === "file");
-  if (file) {
-    return {
-      type: "application/octet-stream",
-      path: file.file,
-      url: file.url,
-    };
-  }
-
-  return;
-}
