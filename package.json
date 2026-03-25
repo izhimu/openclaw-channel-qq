@@ -1,6 +1,6 @@
 {
   "name": "@izhimu/qq",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "A QQ channel plugin for OpenClaw using NapCat WebSocket",
   "type": "module",
   "main": "dist/index.js",
