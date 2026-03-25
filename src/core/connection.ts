@@ -14,18 +14,18 @@ import type {
   ConnectionState,
   ConnectionStatus,
   PendingRequest,
-  HealthStatus, NapCatAction,
+  NapCatAction,
 } from '../types';
 import {
   Logger as log,
   generateEchoId,
-  calculateBackoff,
   getCloseCodeMessage,
 } from '../utils/index.js';
+import { getConnection } from './runtime.js';
 
-const MAX_RECONNECT_ATTEMPTS = -1;
 const REQUEST_TIMEOUT = 30000; // 30 seconds
-const HEARTBEAT_TIMEOUT = 120000; // 120 seconds - time without heartbeat before reconnecting (increased for NapCat compatibility)
+const RECONNECT_INTERVAL = 5000; // 5 seconds - delay between reconnection attempts
+const HEARTBEAT_TIMEOUT = 120000; // 120 seconds - time without heartbeat before reconnecting
 const HEARTBEAT_CHECK_INTERVAL = 60000; // 60 seconds - how often to check for heartbeat timeout
 
 /**
@@ -42,39 +42,14 @@ export class ConnectionManager extends EventEmitter {
 
   // Reconnection
   private reconnectTimer?: NodeJS.Timeout;
-  private totalReconnectAttempts = 0;
   private shouldReconnect = true;
 
   // Pending requests
   private pendingRequests = new Map<string, PendingRequest>();
 
-  // Health status
-  private healthStatus: HealthStatus = {
-    healthy: false,
-    lastHeartbeatAt: 0,
-    consecutiveFailures: 0,
-  };
-
   constructor(config: QQAccount) {
     super();
     this.config = config;
-  }
-
-  // ==========================================================================
-  // Health Status Management
-  // ==========================================================================
-
-  /**
-   * Update health status and emit heartbeat event
-   */
-  private updateHealthStatus(healthy: boolean): void {
-    this.lastHeartbeatTime = Date.now();
-    this.healthStatus = {
-      healthy,
-      lastHeartbeatAt: this.lastHeartbeatTime,
-      consecutiveFailures: healthy ? 0 : this.healthStatus.consecutiveFailures + 1,
-    };
-    this.emit('heartbeat', this.healthStatus);
   }
 
   // ==========================================================================
@@ -86,7 +61,6 @@ export class ConnectionManager extends EventEmitter {
    */
   async start(): Promise<void> {
     if (this.state === 'connected' || this.state === 'connecting') {
-      log.debug('connection', `Already ${this.state}`);
       return;
     }
 
@@ -154,23 +128,6 @@ export class ConnectionManager extends EventEmitter {
       this.ws.on('error', this.handleError.bind(this));
       this.ws.on('close', this.handleClose.bind(this));
 
-      // Wait for connection to be established or failed
-      await new Promise<void>((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          reject(new Error('Connection timeout'));
-        }, 30000);
-
-        this.once('connected', () => {
-          clearTimeout(timeout);
-          resolve();
-        });
-
-        this.once('failed', (error) => {
-          clearTimeout(timeout);
-          reject(error);
-        });
-      });
-
     } catch (error) {
       log.error('connection', `Connection failed:`, error);
       this.handleConnectionFailed(error instanceof Error ? error : new Error(String(error)));
@@ -184,8 +141,6 @@ export class ConnectionManager extends EventEmitter {
     if (this.pendingRequests.size === 0) {
       return;
     }
-
-    log.debug('connection', `Clearing ${this.pendingRequests.size} pending requests: ${reason}`);
 
     for (const [_echo, pending] of this.pendingRequests) {
       clearTimeout(pending.timeout);
@@ -210,21 +165,11 @@ export class ConnectionManager extends EventEmitter {
 
       if (elapsed > HEARTBEAT_TIMEOUT && this.isConnected()) {
         log.warn('connection', `Heartbeat timeout (${elapsed}ms since last heartbeat), reconnecting...`);
-        this.updateHealthStatus(false);
 
         // Close connection and trigger immediate reconnect
         this.setState('disconnected');
         this.close('Heartbeat timeout').then(() => {
           if (this.shouldReconnect) {
-            // Increment total reconnect attempts
-            this.totalReconnectAttempts++;
-
-            // Emit reconnecting event for external status updates
-            this.emit('reconnecting', {
-              reason: 'heartbeat-timeout',
-              totalAttempts: this.totalReconnectAttempts,
-            });
-
             this.connect().catch(error => {
               log.error('connection', `Reconnect failed:`, error);
             });
@@ -232,8 +177,6 @@ export class ConnectionManager extends EventEmitter {
         });
       }
     }, HEARTBEAT_CHECK_INTERVAL);
-
-    log.debug('connection', 'Started heartbeat timeout detection');
   }
 
   /**
@@ -243,7 +186,6 @@ export class ConnectionManager extends EventEmitter {
     if (this.heartbeatCheckTimer) {
       clearInterval(this.heartbeatCheckTimer);
       this.heartbeatCheckTimer = undefined;
-      log.debug('connection', 'Stopped heartbeat timeout detection');
     }
   }
 
@@ -302,10 +244,7 @@ export class ConnectionManager extends EventEmitter {
       // Handle event
       if ('post_type' in message) {
         this.emit('event', message);
-        return;
       }
-
-      log.debug('connection', `Received unsolicited response:`, message);
     } catch (error) {
       log.error('connection', `Failed to parse message:`, error);
     }
@@ -316,11 +255,9 @@ export class ConnectionManager extends EventEmitter {
    */
   private handleMetaEvent(event: NapCatMetaEvent): void {
     if (event.meta_event_type === 'heartbeat') {
-      log.debug('connection', `Received heartbeat`);
-      this.updateHealthStatus(true);
+      this.lastHeartbeatTime = Date.now();
     } else if (event.meta_event_type === 'lifecycle') {
       log.info('connection', `Lifecycle event: ${event.sub_type}`);
-      this.emit('lifecycle', event);
     }
   }
 
@@ -340,7 +277,7 @@ export class ConnectionManager extends EventEmitter {
       return;
     }
 
-    if (this.shouldReconnect && !this.isNormalClosure(code)) {
+    if (this.shouldReconnect) {
       this.scheduleReconnect();
     } else {
       this.setState('disconnected');
@@ -376,12 +313,6 @@ export class ConnectionManager extends EventEmitter {
     } else {
       pending.reject(new Error(response.msg || 'Request failed'));
     }
-
-    log.debug('connection', `Received response for echo: ${echo}`);
-  }
-
-  private isNormalClosure(code: number): boolean {
-    return code === 1000 || code === 1001;
   }
 
   // ==========================================================================
@@ -393,25 +324,16 @@ export class ConnectionManager extends EventEmitter {
       return;
     }
 
-    if (MAX_RECONNECT_ATTEMPTS != -1 && this.totalReconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-      log.error('connection', `Max reconnect attempts reached`);
-      this.setState('failed', 'Max reconnect attempts reached');
-      this.emit('max-reconnect-attempts-reached');
-      return;
-    }
-
-    const delayMs = calculateBackoff(this.totalReconnectAttempts);
-    log.info('connection', `Scheduling reconnect in ${delayMs}ms (attempt ${this.totalReconnectAttempts + 1}/${MAX_RECONNECT_ATTEMPTS})`);
+    log.info('connection', `Scheduling reconnect in ${RECONNECT_INTERVAL}ms`);
 
     this.clearReconnectTimer();
     this.reconnectTimer = setTimeout(async () => {
-      this.totalReconnectAttempts++;
       try {
         await this.connect();
       } catch (error) {
         log.error('connection', `Reconnect failed:`, error);
       }
-    }, delayMs);
+    }, RECONNECT_INTERVAL);
   }
 
   private clearReconnectTimer(): void {
@@ -461,7 +383,6 @@ export class ConnectionManager extends EventEmitter {
 
       try {
         this.ws?.send(JSON.stringify(request));
-        log.debug('connection', `Sent request: ${action} (echo: ${echo})`);
       } catch (error) {
         this.pendingRequests.delete(echo);
         clearTimeout(timeout);
@@ -497,9 +418,7 @@ export class ConnectionManager extends EventEmitter {
     return {
       state: this.state,
       lastConnected: this.lastHeartbeatTime || undefined,
-      lastAttempted: this.totalReconnectAttempts > 0 ? Date.now() : undefined,
       error: this.state === 'failed' ? 'Connection failed' : undefined,
-      reconnectAttempts: this.totalReconnectAttempts > 0 ? this.totalReconnectAttempts : undefined,
     };
   }
 
@@ -521,4 +440,15 @@ export async function failResp<T>(msg: string = ''): Promise<NapCatResp<T>> {
     retcode: -1,
     msg
   });
+}
+
+/**
+ * Send API request via current connection
+ */
+export async function sendRequest<T>(action: NapCatAction, params?: unknown): Promise<NapCatResp<T>> {
+  const connection = getConnection();
+  if (!connection) {
+    return failResp();
+  }
+  return connection.sendRequest(action, params);
 }

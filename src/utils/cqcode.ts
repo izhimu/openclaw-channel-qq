@@ -102,25 +102,4 @@ export class CQCodeUtils {
 
     return nodes;
   }
-
-  /**
-   * 辅助方法：从解析结果中提取所有纯文本内容（去除 CQ 码）
-   * 场景：用于生成通知摘要、日志记录等
-   */
-  static getTextOnly(nodes: CQNode[]): string {
-    return nodes
-      .filter(node => node.type === 'text')
-      .map(node => node.data.text)
-      .join('');
-  }
-
-  /**
-   * 辅助方法：判断消息是否提及了某个 QQ
-   */
-  static isMentioned(nodes: CQNode[], qq: string | number): boolean {
-    const targetQQ = String(qq);
-    return nodes.some(
-      node => node.type === 'at' && (node.data.qq === targetQQ || node.data.qq === 'all')
-    );
-  }
 }

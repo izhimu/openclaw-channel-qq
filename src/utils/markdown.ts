@@ -73,11 +73,8 @@ export class MarkdownToText {
     text = text.replace(/^(\s*)-\s\[\s]\s/gim, '$1⬜ '); // 未完成的任务
     text = text.replace(/^(\s*)[-*+]\s+(.*)$/gm, '$1• $2'); // 列表项变圆点
 
-    // 3.7 表格 (Tables) -> 空格分隔
-    text = text.replace(/^\s*\|?[\s\-:|]+\|?\s*$/gm, ''); // 移除 |---|---| 分隔行
-    text = text.replace(/^\|(.*)\|$/gm, (_match, content) => {
-      return content.split('|').map((s: string) => s.trim()).join('  ');
-    });
+    // 3.7 表格 (Tables) -> 结构化文本
+    text = this.convertTables(text);
 
     // ============================================================
     // 阶段 4: 行内格式 (Inline Formatting)
@@ -107,6 +104,75 @@ export class MarkdownToText {
     text = text.replace(/\n{3,}/g, '\n\n').trim();
 
     return text;
+  }
+
+  /**
+   * 转换 Markdown 表格为可读文本
+   * 支持对齐和多行表格
+   */
+  private convertTables(text: string): string {
+    // 匹配整个表格块（连续的表格行）
+    const tableRegex = /^(\|.+\|[\n\r]?)+/gm;
+
+    return text.replace(tableRegex, (tableBlock) => {
+      const lines = tableBlock.trim().split(/\r?\n/);
+      if (lines.length < 2) return tableBlock; // 至少需要表头和分隔行
+
+      // 解析所有行
+      const rows: string[][] = [];
+      let separatorIndex = -1;
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line.startsWith('|') || !line.endsWith('|')) continue;
+
+        const cells = line.slice(1, -1).split('|').map((c) => c.trim());
+
+        // 检测分隔行 (|---|---|)
+        if (cells.every((c) => /^[-:]+$/.test(c))) {
+          separatorIndex = i;
+          continue;
+        }
+
+        rows.push(cells);
+      }
+
+      if (rows.length === 0) return tableBlock;
+
+      // 计算每列最大宽度
+      const colCount = Math.max(...rows.map((r) => r.length));
+      const colWidths: number[] = [];
+
+      for (let col = 0; col < colCount; col++) {
+        colWidths[col] = Math.max(
+          ...rows.map((r) => (r[col] || '').length),
+          3 // 最小宽度
+        );
+      }
+
+      // 构建格式化输出
+      const result: string[] = [];
+      const separator = '│';
+      const horizontalLine = '─'.repeat(colWidths.reduce((a, b) => a + b, 0) + colCount - 1);
+
+      rows.forEach((row, rowIndex) => {
+        // 填充单元格并对齐
+        const formattedCells = row.map((cell, colIndex) => {
+          const width = colWidths[colIndex] || 3;
+          return (cell || '').padEnd(width);
+        });
+
+        // 添加行内容
+        result.push(formattedCells.join(separator));
+
+        // 在表头后添加分隔线
+        if (separatorIndex !== -1 && rowIndex === 0) {
+          result.push(horizontalLine);
+        }
+      });
+
+      return '\n' + result.join('\n') + '\n';
+    });
   }
 
   /**

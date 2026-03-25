@@ -236,9 +236,7 @@ export type ConnectionState =
 export interface ConnectionStatus {
   state: ConnectionState;
   lastConnected?: number;
-  lastAttempted?: number;
   error?: string;
-  reconnectAttempts?: number;
 }
 
 // =============================================================================

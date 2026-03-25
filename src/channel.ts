@@ -159,13 +159,6 @@ function onEvent(cfg: OpenClawConfig, account: QQAccount, connection: Connection
       });
     }
   });
-  connection.on("reconnecting", (info: { reason: string; totalAttempts: number }) => {
-    log.info('gateway', `Reconnecting: ${info.reason}, attempt ${info.totalAttempts}`);
-    statusSink({
-      lastError: `Reconnecting (${info.reason})`,
-      reconnectAttempts: info.totalAttempts,
-    });
-  });
 }
 
 export const qqPlugin = createChatChannelPlugin<QQAccount>({

@@ -26,17 +26,6 @@ export function generateEchoId(): string {
 }
 
 // =============================================================================
-// Message ID Conversion
-// =============================================================================
-
-/**
- * Convert NapCat integer message ID to string
- */
-export function messageIdToString(messageId: number | string): string {
-  return String(messageId);
-}
-
-// =============================================================================
 // Face/Emoji Mapping
 // =============================================================================
 
@@ -94,33 +83,6 @@ export function extractImageUrl(data: { url?: string; file?: string }): string |
     return data.file;
   }
   return undefined;
-}
-
-// =============================================================================
-// Delay Helpers
-// =============================================================================
-
-/**
- * Calculate exponential backoff delay
- */
-export function calculateBackoff(attempt: number, baseMs: number = 1000, maxMs: number = 30000): number {
-  const delay = baseMs * Math.pow(2, attempt);
-  return Math.min(delay, maxMs);
-}
-
-// =============================================================================
-// Array Helpers
-// =============================================================================
-
-/**
- * Chunk an array into smaller arrays
- */
-export function chunk<T>(array: T[], size: number): T[][] {
-  const chunks: T[][] = [];
-  for (let i = 0; i < array.length; i += size) {
-    chunks.push(array.slice(i, i + size));
-  }
-  return chunks;
 }
 
 // =============================================================================
