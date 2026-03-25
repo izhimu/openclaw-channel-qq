@@ -25,7 +25,7 @@ import type {
 } from "./types";
 import { listQQAccountIds, QQ_CHANNEL, QQConfigSchema, resolveQQAccount } from "./core/config";
 import { eventListener, sendMsg, getStatus, getLoginInfo, getFriendList, getGroupList } from "./core/request.js"
-import { buildMediaMessage, Logger as log, markdownToText, messageIdToString } from "./utils";
+import { buildMediaMessage, Logger as log, markdownToText } from "./utils";
 import {
   clearConnection,
   getConnection,
@@ -62,6 +62,17 @@ async function getGroups(): Promise<ChannelDirectoryEntry[]> {
     id: group.group_id.toString(),
     name: group.group_name,
   }));
+}
+
+async function loadLoginInfo() {
+  // 获取登录信息
+  const info = await getLoginInfo();
+  if (info.data) {
+    setLoginInfo({
+      userId: info.data.user_id.toString(),
+      nickname: info.data.nickname,
+    })
+  }
 }
 
 async function outboundSend(ctx: ChannelOutboundContext): Promise<OutboundDeliveryResult> {
@@ -105,11 +116,11 @@ async function outboundSend(ctx: ChannelOutboundContext): Promise<OutboundDelive
   })
 
   if (response.status === "ok" && response.data) {
-    const data = response.data as { message_id: number };
-    log.debug("outbound", `send successfully, messageId: ${data.message_id}`);
+    const { message_id } = response.data;
+    log.debug("outbound", `send successfully, messageId: ${message_id}`);
     return {
       channel: QQ_CHANNEL,
-      messageId: messageIdToString(data.message_id),
+      messageId: message_id.toString(),
       deliveredAt: Date.now(),
     };
   } else {
@@ -155,17 +166,6 @@ function onEvent(cfg: OpenClawConfig, account: QQAccount, connection: Connection
       reconnectAttempts: info.totalAttempts,
     });
   });
-}
-
-async function loadLoginInfo() {
-  // 获取登录信息
-  const info = await getLoginInfo();
-  if (info.data) {
-    setLoginInfo({
-      userId: info.data.user_id.toString(),
-      nickname: info.data.nickname,
-    })
-  }
 }
 
 export const qqPlugin = createChatChannelPlugin<QQAccount>({
