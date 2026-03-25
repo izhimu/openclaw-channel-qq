@@ -33,6 +33,7 @@ const HEARTBEAT_CHECK_INTERVAL = 60000; // 60 seconds - how often to check for h
  */
 export class ConnectionManager extends EventEmitter {
   private config: QQAccount;
+  private accountId: string;
   private ws: WebSocket | null = null;
   private state: ConnectionState = 'disconnected';
 
@@ -47,8 +48,9 @@ export class ConnectionManager extends EventEmitter {
   // Pending requests
   private pendingRequests = new Map<string, PendingRequest>();
 
-  constructor(config: QQAccount) {
+  constructor(accountId: string, config: QQAccount) {
     super();
+    this.accountId = accountId;
     this.config = config;
   }
 
@@ -66,7 +68,7 @@ export class ConnectionManager extends EventEmitter {
 
     this.shouldReconnect = true;
     await this.connect();
-    log.info('connection', `Started connection`)
+    log.info('connection', `[${this.accountId}] Started connection`)
   }
 
   /**
@@ -77,7 +79,7 @@ export class ConnectionManager extends EventEmitter {
     this.clearReconnectTimer();
     await this.close('Stopping connection');
     this.setState('disconnected');
-    log.info('connection', `Stopped connection`)
+    log.info('connection', `[${this.accountId}] Stopped connection`)
   }
 
   /**
@@ -445,8 +447,8 @@ export async function failResp<T>(msg: string = ''): Promise<NapCatResp<T>> {
 /**
  * Send API request via current connection
  */
-export async function sendRequest<T>(action: NapCatAction, params?: unknown): Promise<NapCatResp<T>> {
-  const connection = getConnection();
+export async function sendRequest<T>(accountId: string, action: NapCatAction, params?: unknown): Promise<NapCatResp<T>> {
+  const connection = getConnection(accountId);
   if (!connection) {
     return failResp();
   }

@@ -44,8 +44,8 @@ const formatAllowFromEntry = (entry: string) =>
     .replace(/^(qq):/i, "")
     .toLowerCase();
 
-async function getFriends(): Promise<ChannelDirectoryEntry[]> {
-  const friendList = await getFriendList();
+async function getFriends(accountId: string): Promise<ChannelDirectoryEntry[]> {
+  const friendList = await getFriendList(accountId);
   log.debug('directory', `friendList: ${JSON.stringify(friendList.data)}`);
   return (friendList.data || []).map((friend: GetFriendListResp) => ({
     kind: "user",
@@ -54,8 +54,8 @@ async function getFriends(): Promise<ChannelDirectoryEntry[]> {
   }));
 }
 
-async function getGroups(): Promise<ChannelDirectoryEntry[]> {
-  const groupList = await getGroupList();
+async function getGroups(accountId: string): Promise<ChannelDirectoryEntry[]> {
+  const groupList = await getGroupList(accountId);
   log.debug('directory', `groupList: ${JSON.stringify(groupList.data)}`);
   return (groupList.data || []).map((group: GetGroupListResp) => ({
     kind: "group",
@@ -64,11 +64,11 @@ async function getGroups(): Promise<ChannelDirectoryEntry[]> {
   }));
 }
 
-async function loadLoginInfo() {
+async function loadLoginInfo(accountId: string) {
   // 获取登录信息
-  const info = await getLoginInfo();
+  const info = await getLoginInfo(accountId);
   if (info.data) {
-    setLoginInfo({
+    setLoginInfo(accountId, {
       userId: info.data.user_id.toString(),
       nickname: info.data.nickname,
     })
@@ -87,6 +87,7 @@ async function outboundSend(ctx: ChannelOutboundContext): Promise<OutboundDelive
 
   const content: OpenClawMessage[] = []
   const account = resolveQQAccount({ cfg, accountId });
+  const resolvedAccountId = account.accountId;
 
   if (text) {
     content.push({ type: "text", text: account.markdownFormat ? markdownToText(text) : text })
@@ -108,7 +109,7 @@ async function outboundSend(ctx: ChannelOutboundContext): Promise<OutboundDelive
     }
   }
 
-  const response = await sendMsg({
+  const response = await sendMsg(resolvedAccountId, {
     message_type: chatType,
     user_id: chatType === "private" ? chatId : undefined,
     group_id: chatType === "group" ? chatId : undefined,
@@ -188,7 +189,10 @@ export const qqPlugin = createChatChannelPlugin<QQAccount>({
         sectionKey: QQ_CHANNEL,
         listAccountIds: listQQAccountIds,
         resolveAccount: adaptScopedAccountAccessor(resolveQQAccount),
-        defaultAccountId: () => DEFAULT_ACCOUNT_ID,
+        defaultAccountId: (cfg) => {
+          const ids = listQQAccountIds(cfg);
+          return ids.length > 0 ? ids[0] : DEFAULT_ACCOUNT_ID;
+        },
         clearBaseFields: ["name"],
         resolveAllowFrom: (account) => account.messageDirect.allowFrom,
         formatAllowFrom: (allowFrom) => formatNormalizedAllowFromEntries({
@@ -196,7 +200,7 @@ export const qqPlugin = createChatChannelPlugin<QQAccount>({
           normalizeEntry: formatAllowFromEntry,
         }),
       }),
-      isConfigured: (account) => !!account.accessToken?.trim(),
+      isConfigured: (account) => !!account.wsUrl?.trim(),
     },
     configSchema: buildChannelConfigSchema(QQConfigSchema),
     setup: createPatchedAccountSetupAdapter({
@@ -240,8 +244,8 @@ export const qqPlugin = createChatChannelPlugin<QQAccount>({
         probe: snapshot.probe,
         lastProbeAt: snapshot.lastProbeAt ?? null,
       }),
-      probeAccount: async () => {
-        const status = await getStatus();
+      probeAccount: async ({ account }) => {
+        const status = await getStatus(account.accountId);
         log.debug('gateway', `Probe status: ${status.status}`)
         return {
           ok: status.status === "ok",
@@ -251,7 +255,7 @@ export const qqPlugin = createChatChannelPlugin<QQAccount>({
       },
       resolveAccountSnapshot: ({ account }) => ({
         accountId: account.accountId ?? DEFAULT_ACCOUNT_ID,
-        name: "QQ",
+        name: account.agentId ? `QQ (${account.agentId})` : "QQ",
         enabled: account.enabled,
         configured: Boolean(account.wsUrl?.trim()),
       })
@@ -259,11 +263,12 @@ export const qqPlugin = createChatChannelPlugin<QQAccount>({
     gateway: {
       startAccount: async (ctx) => {
         const account = ctx.account;
+        const accountId = account.accountId;
         const statusSink = createAccountStatusSink({
-          accountId: account.accountId,
+          accountId: accountId,
           setStatus: ctx.setStatus,
         });
-        log.info('gateway', `Starting QQ Chat`);
+        log.info('gateway', `[${accountId}] Starting QQ Chat`);
 
         statusSink({
           running: true,
@@ -273,18 +278,18 @@ export const qqPlugin = createChatChannelPlugin<QQAccount>({
         await runPassiveAccountLifecycle({
           abortSignal: ctx.abortSignal,
           start: async () => {
-            const connection = new ConnectionManager(account);
+            const connection = new ConnectionManager(accountId, account);
             onEvent(ctx.cfg, account, connection, statusSink);
             await connection.start();
-            setConnection(connection);
-            await loadLoginInfo();
-            log.info('gateway', `Started gateway`);
+            setConnection(accountId, connection);
+            await loadLoginInfo(accountId);
+            log.info('gateway', `[${accountId}] Started gateway`);
           },
           stop: async () => {
-            const connection = getConnection();
+            const connection = getConnection(accountId);
             if (connection) {
               await connection.stop();
-              clearConnection()
+              clearConnection(accountId)
             }
           },
           onStop: async () => {
@@ -297,8 +302,9 @@ export const qqPlugin = createChatChannelPlugin<QQAccount>({
       },
     },
     directory: createChannelDirectoryAdapter({
-      self: async () => {
-        const info = await getLoginInfo();
+      self: async ({ accountId }) => {
+        const resolvedAccountId = accountId ?? DEFAULT_ACCOUNT_ID;
+        const info = await getLoginInfo(resolvedAccountId);
         if (!info.data) {
           return null
         }
@@ -309,10 +315,10 @@ export const qqPlugin = createChatChannelPlugin<QQAccount>({
           name: info.data.nickname,
         };
       },
-      listPeers: getFriends,
-      listPeersLive: getFriends,
-      listGroups: getGroups,
-      listGroupsLive: getGroups,
+      listPeers: async ({ accountId }) => getFriends(accountId ?? DEFAULT_ACCOUNT_ID),
+      listPeersLive: async ({ accountId }) => getFriends(accountId ?? DEFAULT_ACCOUNT_ID),
+      listGroups: async ({ accountId }) => getGroups(accountId ?? DEFAULT_ACCOUNT_ID),
+      listGroupsLive: async ({ accountId }) => getGroups(accountId ?? DEFAULT_ACCOUNT_ID),
     }),
     security: {},
   },

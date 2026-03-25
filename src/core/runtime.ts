@@ -8,38 +8,49 @@ import { QQLoginInfo } from "../types";
 import { ConnectionManager } from "./connection.js";
 
 // =============================================================================
-// Connection
+// 多账号连接管理
 // =============================================================================
 
-let connection: ConnectionManager | null = null;
+// 使用 Map 存储每个账号的连接
+const connections = new Map<string, ConnectionManager>();
 
-export function setConnection(next: ConnectionManager): void {
-  connection = next;
+export function setConnection(accountId: string, conn: ConnectionManager): void {
+  connections.set(accountId, conn);
 }
 
-export function getConnection(): ConnectionManager | null {
-  return connection;
+export function getConnection(accountId?: string): ConnectionManager | null {
+  if (!accountId) {
+    // 返回第一个可用连接（兼容旧代码）
+    const first = connections.values().next();
+    return first.done ? null : first.value;
+  }
+  return connections.get(accountId) ?? null;
 }
 
-export function clearConnection(): void {
-  connection = null;
+export function clearConnection(accountId: string): void {
+  connections.delete(accountId);
+}
+
+export function getAllConnections(): Map<string, ConnectionManager> {
+  return connections;
 }
 
 // =============================================================================
-// LoginInfo
+// 多账号登录信息
 // =============================================================================
 
-const loginInfo: QQLoginInfo = {
-  userId: '',
-  nickname: '',
+const loginInfos = new Map<string, QQLoginInfo>();
+
+export function setLoginInfo(accountId: string, info: QQLoginInfo): void {
+  loginInfos.set(accountId, info);
 }
 
-export function setLoginInfo(next: QQLoginInfo): void {
-  Object.assign(loginInfo, next);
-}
-
-export function getLoginInfo(): QQLoginInfo {
-  return loginInfo;
+export function getLoginInfo(accountId?: string): QQLoginInfo {
+  if (!accountId) {
+    const first = loginInfos.values().next();
+    return first.done ? { userId: '', nickname: '' } : first.value;
+  }
+  return loginInfos.get(accountId) ?? { userId: '', nickname: '' };
 }
 
 // =============================================================================

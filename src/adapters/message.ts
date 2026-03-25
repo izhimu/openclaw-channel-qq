@@ -77,7 +77,7 @@ function parseJsonSegment(segment: NapCatJsonSegment): OpenClawJsonContent {
 // 入站转换器 (NapCat -> OpenClaw)
 // =============================================================================
 
-type InboundConverter = (data: Record<string, unknown>) => OpenClawMessage | null | Promise<OpenClawMessage | null>;
+type InboundConverter = (data: Record<string, unknown>, accountId?: string) => OpenClawMessage | null | Promise<OpenClawMessage | null | undefined>;
 
 const inboundConverters: Record<string, InboundConverter> = {
   text: (data) => ({ type: 'text', text: str(data, 'text') }),
@@ -93,8 +93,9 @@ const inboundConverters: Record<string, InboundConverter> = {
     return url ? { type: 'image', url, summary: data.summary as string | undefined } : null;
   },
 
-  reply: async (data) => {
-    const response = await getMsg({ message_id: Number(data.id) });
+  reply: async (data, accountId) => {
+    if (!accountId) return null;
+    const response = await getMsg(accountId, { message_id: Number(data.id) });
     if (!response.data?.message) return null;
     return {
       type: 'reply',
@@ -130,7 +131,7 @@ const inboundConverters: Record<string, InboundConverter> = {
   json: (data) => parseJsonSegment({ type: 'json', data: { data: str(data, 'data') } }),
 };
 
-async function napCatToOpenClaw(segment: NapCatMessage): Promise<OpenClawMessage | null> {
+async function napCatToOpenClaw(segment: NapCatMessage, accountId?: string): Promise<OpenClawMessage | null> {
   const data = segment.data as Record<string, unknown>;
   const converter = inboundConverters[segment.type];
 
@@ -139,7 +140,14 @@ async function napCatToOpenClaw(segment: NapCatMessage): Promise<OpenClawMessage
     return null;
   }
 
-  return converter(data);
+  // For reply converter, we need to pass accountId
+  if (segment.type === 'reply' && accountId) {
+    const result = await (converter as (data: Record<string, unknown>, accountId?: string) => Promise<OpenClawMessage | null | undefined>)(data, accountId);
+    return result ?? null;
+  }
+
+  const result = await converter(data);
+  return result ?? null;
 }
 
 // =============================================================================
@@ -204,12 +212,12 @@ export async function outboundMessageAdapter(content: OpenClawMessage[], account
   return segments;
 }
 
-export async function inboundMessageAdapter(segments: NapCatMessage[] | string): Promise<OpenClawMessage[]> {
+export async function inboundMessageAdapter(segments: NapCatMessage[] | string, accountId?: string): Promise<OpenClawMessage[]> {
   const normalized = normalizeMessage(segments);
   const content: OpenClawMessage[] = [];
 
   for (const segment of normalized) {
-    const result = await napCatToOpenClaw(segment);
+    const result = await napCatToOpenClaw(segment, accountId);
     if (result) content.push(result);
   }
 

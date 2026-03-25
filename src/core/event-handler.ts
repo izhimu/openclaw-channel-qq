@@ -76,7 +76,7 @@ async function buildMessageEventContext(
   });
 
   // 解析消息内容
-  const content = await inboundMessageAdapter(event.message);
+  const content = await inboundMessageAdapter(event.message, account.accountId);
   const plainText = formatContentToText(content);
   const media = hasMediaContent(content) ? extractMedia(content) : undefined;
 

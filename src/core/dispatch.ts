@@ -19,7 +19,7 @@ import { getQQConfigByChatType } from "./auth.js";
 
 async function send(account: QQAccount, isGroup: boolean, to: string, messageSegments: OpenClawMessage[]): Promise<void> {
   try {
-    await sendMsg({
+    await sendMsg(account.accountId, {
       message_type: isGroup ? 'group' : 'private',
       group_id: isGroup ? to : undefined,
       user_id: !isGroup ? to : undefined,
@@ -115,7 +115,7 @@ async function processInboundMessage(params: ProcessInboundParams): Promise<void
   const { cfg, account, runtime, msg } = params;
 
   const isGroup = msg.isGroup;
-  const loginInfo = getLoginInfo();
+  const loginInfo = getLoginInfo(account.accountId);
   const peerId = isGroup ? (msg.groupId ?? msg.senderId) : msg.senderId
 
   // For group messages, check @mention requirement
@@ -225,7 +225,7 @@ async function processInboundMessage(params: ProcessInboundParams): Promise<void
       onReplyStart: async (): Promise<void> => {
         if (!isGroup) {
           // 输入状态
-          await setInputStatus({
+          await setInputStatus(account.accountId, {
             user_id: msg.senderId,
             event_type: 1
           });
@@ -265,7 +265,7 @@ async function processInboundMessage(params: ProcessInboundParams): Promise<void
 
   // 7.结束输入状态
   if (!isGroup) {
-    await setInputStatus({
+    await setInputStatus(account.accountId, {
       user_id: msg.senderId,
       event_type: 2
     });

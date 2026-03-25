@@ -7,9 +7,32 @@ export interface QQAccount {
   accessToken?: string;
   enabled: boolean;
   markdownFormat: boolean;
+  agentId?: string;  // 绑定的 agent ID
   messageDirect: QQAllowConfig
   messageGroup: QQGroupConfig;
   messageGroupsCustom: Record<string, QQGroupConfig>;
+}
+
+// 账号配置（用于配置文件）
+export interface QQAccountConfig {
+  enabled?: boolean;
+  name?: string;              // 账号显示名称
+  wsUrl: string;
+  accessToken: string;
+  agentId?: string;           // 绑定的 agent ID
+  markdownFormat?: boolean;
+  messageDirect?: Partial<QQAllowConfig>;
+  messageGroup?: Partial<QQGroupConfig>;
+  messageGroupsCustom?: Record<string, Partial<QQGroupConfig>>;
+}
+
+// 全局配置（含账号列表）
+export interface QQGlobalConfig {
+  enabled?: boolean;
+  markdownFormat?: boolean;
+  messageDirect?: Partial<QQAllowConfig>;
+  messageGroup?: Partial<QQGroupConfig>;
+  accounts: Record<string, QQAccountConfig>;
 }
 
 export interface InboundMessage {
