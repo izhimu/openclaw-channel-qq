@@ -24,6 +24,7 @@ import type {
   QQAccount,
 } from "./types";
 import { listQQAccountIds, QQ_CHANNEL, QQConfigSchema, resolveQQAccount } from "./core/config";
+import type { ChannelConfiguredBindingConversationRef, ChannelConfiguredBindingMatch } from "openclaw/plugin-sdk";
 import { eventListener, sendMsg, getStatus, getLoginInfo, getFriendList, getGroupList } from "./core/request.js"
 import { buildMediaMessage, Logger as log, markdownToText } from "./utils";
 import {
@@ -43,6 +44,47 @@ const formatAllowFromEntry = (entry: string) =>
     .trim()
     .replace(/^(qq):/i, "")
     .toLowerCase();
+
+/**
+ * 规范化 QQ conversationId
+ * 支持格式:
+ * - private:xxx (私聊)
+ * - group:xxx (群聊)
+ * - 纯数字 (默认视为私聊)
+ *
+ * 返回规范化后的 conversationId 和可选的 parentConversationId
+ */
+function normalizeQQConversationId(conversationId: string): ChannelConfiguredBindingConversationRef | null {
+  if (!conversationId) return null;
+
+  const trimmed = conversationId.trim();
+
+  // 支持 private:xxx 格式
+  if (trimmed.startsWith("private:")) {
+    return {
+      conversationId: trimmed.toLowerCase(),
+    };
+  }
+
+  // 支持 group:xxx 格式
+  if (trimmed.startsWith("group:")) {
+    return {
+      conversationId: trimmed.toLowerCase(),
+    };
+  }
+
+  // 纯数字格式，默认视为私聊
+  if (/^\d+$/.test(trimmed)) {
+    return {
+      conversationId: `private:${trimmed}`,
+    };
+  }
+
+  // 其他格式，尝试保持原样
+  return {
+    conversationId: trimmed.toLowerCase(),
+  };
+}
 
 async function getFriends(accountId: string): Promise<ChannelDirectoryEntry[]> {
   const friendList = await getFriendList(accountId);
@@ -321,6 +363,79 @@ export const qqPlugin = createChatChannelPlugin<QQAccount>({
       listGroupsLive: async ({ accountId }) => getGroups(accountId ?? DEFAULT_ACCOUNT_ID),
     }),
     security: {},
+
+    // Agent 绑定适配器
+    // 支持将 QQ 账号绑定到指定的 Agent
+    bindings: {
+      /**
+       * 编译配置的绑定
+       * 将 binding 中的 conversationId 规范化为统一的格式
+       * QQ 的 conversationId 格式: private:xxx 或 group:xxx
+       */
+      compileConfiguredBinding: (params: {
+        binding: { match: { peer?: { id?: string } } };
+        conversationId: string;
+      }): ChannelConfiguredBindingConversationRef | null => {
+        const conversationId = params.conversationId;
+        if (!conversationId) return null;
+
+        // 规范化 conversationId
+        // 支持格式: private:xxx, group:xxx, 或直接 xxx
+        const normalized = normalizeQQConversationId(conversationId);
+        if (!normalized) return null;
+
+        return {
+          conversationId: normalized.conversationId,
+          parentConversationId: normalized.parentConversationId,
+        };
+      },
+
+      /**
+       * 匹配入站消息
+       * 检查入站消息是否匹配已编译的绑定
+       */
+      matchInboundConversation: (params: {
+        binding: { match: { peer?: { id?: string } } };
+        compiledBinding: ChannelConfiguredBindingConversationRef;
+        conversationId: string;
+        parentConversationId?: string;
+      }): ChannelConfiguredBindingMatch | null => {
+        const { compiledBinding, conversationId, parentConversationId } = params;
+
+        // 规范化入站消息的 conversationId
+        const normalized = normalizeQQConversationId(conversationId);
+        if (!normalized) return null;
+
+        // 检查是否匹配编译后的绑定
+        const inboundConversationId = normalized.conversationId;
+        const inboundParentId = normalized.parentConversationId;
+
+        // 精确匹配 conversationId
+        if (compiledBinding.conversationId === inboundConversationId) {
+          // 如果绑定有 parentConversationId，也需要检查
+          if (compiledBinding.parentConversationId) {
+            if (compiledBinding.parentConversationId === inboundParentId ||
+              compiledBinding.parentConversationId === parentConversationId) {
+              return {
+                conversationId: inboundConversationId,
+                parentConversationId: inboundParentId,
+                matchPriority: 10,
+              };
+            }
+            // parent 不匹配
+            return null;
+          }
+          // 没有父级要求，直接匹配成功
+          return {
+            conversationId: inboundConversationId,
+            parentConversationId: inboundParentId,
+            matchPriority: 10,
+          };
+        }
+
+        return null;
+      },
+    },
   },
   outbound: {
     base: {
